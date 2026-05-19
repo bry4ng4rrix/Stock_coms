@@ -70,6 +70,14 @@ class ProductSerializer(serializers.ModelSerializer):
         model = Product
         fields = "__all__"
 
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        request = self.context.get("request")
+        # Hide purchase price (unit_price) to magasin and employer roles
+        if request and request.user and getattr(request.user, "role", None) != "admin":
+            representation.pop("unit_price", None)
+        return representation
+
 class SaleSerializer(serializers.ModelSerializer):
     seller_name = serializers.CharField(source="seller.full_name", read_only=True)
     shop_name = serializers.CharField(source="magasin.shop_name", read_only=True)
@@ -88,3 +96,13 @@ class SaleSerializer(serializers.ModelSerializer):
             "total_price",
             "sold_at",
         ]
+
+    def validate(self, attrs):
+        product = attrs.get("product")
+        quantity = attrs.get("quantity")
+        if product and quantity:
+            if product.initial_quantity < quantity:
+                raise serializers.ValidationError(
+                    {"quantity": f"Quantité en stock insuffisante. Stock disponible : {product.initial_quantity}."}
+                )
+        return attrs

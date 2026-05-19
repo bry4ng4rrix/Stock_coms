@@ -167,12 +167,13 @@ Application de gestion de stock multi-rôles avec système d'authentification JW
 - Nom, référence unique, marque, catégorie, description
 
 ### Gestion des Prix
-- Prix unitaire (unit_price)
-- Prix de vente (shell_price)
+- **Prix unitaire (unit_price)** : Prix d'achat d'origine. **Sécurité critique** : Masqué automatiquement via l'API pour les gérants de magasin et les employés (seul l'Admin peut le consulter).
+- **Prix de vente (shell_price)** : Prix de vente au détail, visible par tous les rôles.
 
 ### Gestion du Stock
-- Quantité initiale
-- Seuil d'alerte pour le réapprovisionnement
+- **Quantité initiale** : Stock total disponible.
+- **Sécurité et intégrité** : Vérification stricte lors de chaque vente; si la quantité demandée excède le stock disponible, la vente est bloquée avec une erreur explicite.
+- **Seuil d'alerte** : Seuil critique pour le réapprovisionnement automatique.
 
 ### Dates et Validité
 - Date d'expiration des produits

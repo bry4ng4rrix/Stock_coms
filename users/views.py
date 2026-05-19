@@ -2,7 +2,10 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status, viewsets
-from django.db.models import Sum, F, DecimalField
+from django.db.models import Sum, F, DecimalField, Count
+from django.db.models.functions import Coalesce
+from django.utils import timezone
+from datetime import timedelta
 
 from .models import CustomUser, Product, MagasinProfile, Sale, EmployerProfile
 from .serializers import RegisterSerializer, ProductSerializer, SaleSerializer
@@ -118,13 +121,14 @@ class SaleViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     def get_queryset(self):
         user = self.request.user
+        base_qs = Sale.objects.select_related('product', 'magasin', 'seller')
         if user.role == "admin":
-            return Sale.objects.all()
+            return base_qs
         elif user.role == "magasin":
             magasin = MagasinProfile.objects.get(user=user)
-            return Sale.objects.filter(product__magasin=magasin)
+            return base_qs.filter(product__magasin=magasin)
         elif user.role == "employer":
-            return Sale.objects.filter(product__magasin__employers__user=user)
+            return base_qs.filter(product__magasin__employers__user=user)
         return Sale.objects.none()
     def perform_create(self, serializer):
         product = serializer.validated_data.get('product')
@@ -141,13 +145,14 @@ class ProductViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     def get_queryset(self):
         user = self.request.user
+        base_qs = Product.objects.select_related('magasin')
         if user.role == "admin":
-            return Product.objects.all()
+            return base_qs
         elif user.role == "magasin":
             magasin = MagasinProfile.objects.get(user=user)
-            return Product.objects.filter(magasin=magasin)
+            return base_qs.filter(magasin=magasin)
         elif user.role == "employer":
-            return Product.objects.filter(magasin__employers__user=user)
+            return base_qs.filter(magasin__employers__user=user)
         return Product.objects.none()
     def perform_create(self, serializer):
         user = self.request.user
@@ -224,3 +229,210 @@ class UsersByMagasinView(APIView):
             })
 
         return Response(response_data)
+
+
+# =========================
+# DASHBOARD VIEW
+# =========================
+class DashboardView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        role = user.role
+        today = timezone.now().date()
+
+        if role == "admin":
+            # KPIs
+            total_revenue = Sale.objects.aggregate(total=Sum('total_price'))['total'] or 0
+            total_profit = Sale.objects.aggregate(total=Sum(F('sale_price') * F('quantity') - F('product__unit_price') * F('quantity'), output_field=DecimalField()))['total'] or 0
+            total_stock_value = Product.objects.aggregate(total=Sum(F('initial_quantity') * F('unit_price'), output_field=DecimalField()))['total'] or 0
+            total_magasins = MagasinProfile.objects.count()
+            total_employers = EmployerProfile.objects.count()
+            total_products = Product.objects.count()
+            total_sales = Sale.objects.count()
+            sales_today = Sale.objects.filter(sold_at__date=today).count()
+            profit_today = Sale.objects.filter(sold_at__date=today).aggregate(total=Sum(F('sale_price') * F('quantity') - F('product__unit_price') * F('quantity'), output_field=DecimalField()))['total'] or 0
+            low_stock_count = Product.objects.filter(initial_quantity__lte=F('alert_threshold')).count()
+            expired_count = Product.objects.filter(expiry_date__lt=today).count()
+            expiring_soon_count = Product.objects.filter(expiry_date__range=[today, today + timedelta(days=30)]).count()
+
+            # Lists
+            top_products = Sale.objects.values('product__name', 'product__magasin__shop_name').annotate(
+                qty_sold=Sum('quantity'),
+                profit=Sum(F('sale_price') * F('quantity') - F('product__unit_price') * F('quantity'), output_field=DecimalField())
+            ).order_by('-qty_sold')[:5]
+
+            bottom_products = Product.objects.values('name', 'initial_quantity').annotate(
+                qty_sold=Coalesce(Sum('sales__quantity'), 0)
+            ).order_by('qty_sold')[:5]
+
+            low_stock_list = Product.objects.filter(initial_quantity__lte=F('alert_threshold')).values(
+                'name', 'initial_quantity', 'alert_threshold', 'magasin__shop_name'
+            )[:5]
+
+            expired_list = Product.objects.filter(expiry_date__lt=today).values(
+                'name', 'expiry_date', 'magasin__shop_name'
+            )[:5]
+
+            expiring_soon_list = Product.objects.filter(expiry_date__range=[today, today + timedelta(days=30)]).values(
+                'name', 'expiry_date', 'magasin__shop_name'
+            )[:5]
+
+            recent_sales_qs = Sale.objects.select_related('product', 'magasin', 'seller').order_by('-sold_at')[:5]
+            recent_sales = []
+            for sale in recent_sales_qs:
+                recent_sales.append({
+                    "product_name": sale.product.name,
+                    "quantity": sale.quantity,
+                    "sale_price": sale.sale_price,
+                    "total_price": sale.total_price,
+                    "seller_name": sale.seller.full_name if sale.seller else None,
+                    "shop_name": sale.magasin.shop_name if sale.magasin else None,
+                    "sold_at": sale.sold_at
+                })
+
+            best_employees = Sale.objects.values('seller__full_name').annotate(
+                sales_count=Count('id'),
+                total_amount=Sum('total_price'),
+                profit=Sum(F('sale_price') * F('quantity') - F('product__unit_price') * F('quantity'), output_field=DecimalField())
+            ).order_by('-total_amount')[:5]
+
+            best_shops = Sale.objects.values('magasin__shop_name').annotate(
+                total_amount=Sum('total_price'),
+                profit=Sum(F('sale_price') * F('quantity') - F('product__unit_price') * F('quantity'), output_field=DecimalField()),
+                sales_count=Count('id'),
+                total_stock=Coalesce(Sum('product__initial_quantity'), 0)
+            ).order_by('-total_amount')[:5]
+
+            return Response({
+                "role": role,
+                "kpis": {
+                    "total_revenue": total_revenue,
+                    "total_profit": total_profit,
+                    "total_stock_value": total_stock_value,
+                    "total_magasins": total_magasins,
+                    "total_employers": total_employers,
+                    "total_products": total_products,
+                    "total_sales": total_sales,
+                    "sales_today": sales_today,
+                    "profit_today": profit_today,
+                    "low_stock_count": low_stock_count,
+                    "expired_count": expired_count,
+                    "expiring_soon_count": expiring_soon_count
+                },
+                "lists": {
+                    "top_products": top_products,
+                    "bottom_products": bottom_products,
+                    "low_stock_products": low_stock_list,
+                    "expired_products": expired_list,
+                    "expiring_soon_products": expiring_soon_list,
+                    "recent_sales": recent_sales,
+                    "best_employees": best_employees,
+                    "best_shops": best_shops
+                }
+            })
+
+        elif role == "magasin":
+            try:
+                magasin = MagasinProfile.objects.get(user=user)
+            except MagasinProfile.DoesNotExist:
+                return Response({"error": "Magasin profile not found"}, status=404)
+
+            # KPIs (without exposing company wide unit_price)
+            sales_today = Sale.objects.filter(magasin=magasin, sold_at__date=today).count()
+            profit_today = Sale.objects.filter(magasin=magasin, sold_at__date=today).aggregate(total=Sum(F('sale_price') * F('quantity') - F('product__unit_price') * F('quantity'), output_field=DecimalField()))['total'] or 0
+            stock_value = Product.objects.filter(magasin=magasin).aggregate(total=Sum(F('initial_quantity') * F('unit_price'), output_field=DecimalField()))['total'] or 0
+            total_products = Product.objects.filter(magasin=magasin).count()
+            total_sales = Sale.objects.filter(magasin=magasin).count()
+            low_stock_count = Product.objects.filter(magasin=magasin, initial_quantity__lte=F('alert_threshold')).count()
+            expired_count = Product.objects.filter(magasin=magasin, expiry_date__lt=today).count()
+
+            # Lists (never showing individual unit_price)
+            top_products = Sale.objects.filter(magasin=magasin).values('product__name').annotate(
+                qty_sold=Sum('quantity')
+            ).order_by('-qty_sold')[:5]
+
+            bottom_products = Product.objects.filter(magasin=magasin).values('name', 'initial_quantity').annotate(
+                qty_sold=Coalesce(Sum('sales__quantity'), 0)
+            ).order_by('qty_sold')[:5]
+
+            low_stock_list = Product.objects.filter(magasin=magasin, initial_quantity__lte=F('alert_threshold')).values(
+                'name', 'initial_quantity'
+            )[:5]
+
+            recent_sales_qs = Sale.objects.filter(magasin=magasin).select_related('product', 'seller').order_by('-sold_at')[:5]
+            recent_sales = []
+            for sale in recent_sales_qs:
+                recent_sales.append({
+                    "product_name": sale.product.name,
+                    "quantity": sale.quantity,
+                    "total_price": sale.total_price,
+                    "seller_name": sale.seller.full_name if sale.seller else None,
+                    "sold_at": sale.sold_at
+                })
+
+            best_sellers = Sale.objects.filter(magasin=magasin).values('seller__full_name').annotate(
+                sales_count=Count('id'),
+                total_amount=Sum('total_price')
+            ).order_by('-total_amount')[:5]
+
+            return Response({
+                "role": role,
+                "kpis": {
+                    "sales_today": sales_today,
+                    "profit_today": profit_today,
+                    "stock_value": stock_value,
+                    "total_products": total_products,
+                    "total_sales": total_sales,
+                    "low_stock_count": low_stock_count,
+                    "expired_count": expired_count
+                },
+                "lists": {
+                    "top_products": top_products,
+                    "bottom_products": bottom_products,
+                    "low_stock_products": low_stock_list,
+                    "recent_sales": recent_sales,
+                    "best_sellers": best_sellers
+                }
+            })
+
+        elif role == "employer":
+            try:
+                employer_profile = EmployerProfile.objects.get(user=user)
+                magasin = employer_profile.magasin
+            except EmployerProfile.DoesNotExist:
+                return Response({"error": "Employer profile not found"}, status=404)
+
+            # KPIs
+            my_sales_today = Sale.objects.filter(seller=user, sold_at__date=today).count()
+            total_amount_sold = Sale.objects.filter(seller=user).aggregate(total=Sum('total_price'))['total'] or 0
+            products_sold_count = Sale.objects.filter(seller=user).aggregate(total=Sum('quantity'))['total'] or 0
+            clients_count = Sale.objects.filter(seller=user).count()
+
+            # Lists
+            recent_sales_qs = Sale.objects.filter(seller=user).select_related('product').order_by('-sold_at')[:5]
+            recent_sales = []
+            for sale in recent_sales_qs:
+                recent_sales.append({
+                    "product_name": sale.product.name,
+                    "quantity": sale.quantity,
+                    "total_price": sale.total_price,
+                    "sold_at": sale.sold_at
+                })
+
+            return Response({
+                "role": role,
+                "kpis": {
+                    "my_sales_today": my_sales_today,
+                    "total_amount_sold": total_amount_sold,
+                    "products_sold_count": products_sold_count,
+                    "clients_count": clients_count
+                },
+                "lists": {
+                    "recent_sales": recent_sales
+                }
+            })
+
+        else:
+            return Response({"error": "Role not supported"}, status=403)
