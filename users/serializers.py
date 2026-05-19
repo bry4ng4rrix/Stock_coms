@@ -71,6 +71,20 @@ class ProductSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 class SaleSerializer(serializers.ModelSerializer):
+    seller_name = serializers.CharField(source="seller.full_name", read_only=True)
+    shop_name = serializers.CharField(source="magasin.shop_name", read_only=True)
+
     class Meta:
         model = Sale
-        fields = "__all__"
+        fields = [
+            "id",
+            "product",
+            "magasin",
+            "shop_name",
+            "seller",
+            "seller_name",
+            "quantity",
+            "sale_price",
+            "total_price",
+            "sold_at",
+        ]

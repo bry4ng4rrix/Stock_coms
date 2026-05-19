@@ -59,6 +59,37 @@ Base URL: `/api/users/`
   ```
 - **Response**: Success message with old and new role
 
+### GET `/api/users/magasins/users/`
+- **Description**: List all users (managers and employers) grouped by magasin.
+- **Auth**: Required
+- **Permissions**: IsAuthenticated
+- **Response**:
+  ```json
+  [
+    {
+      "magasin_id": 1,
+      "shop_name": "Shop Name",
+      "manager": {
+        "id": 2,
+        "full_name": "Manager Full Name",
+        "email": "manager@example.com",
+        "is_confirmed": true,
+        "role": "magasin"
+      },
+      "employers": [
+        {
+          "id": 3,
+          "full_name": "Employee Full Name",
+          "email": "employee@example.com",
+          "is_confirmed": true,
+          "position": "Seller Position",
+          "role": "employer"
+        }
+      ]
+    }
+  ]
+  ```
+
 ## Products
 
 ### GET `/api/users/products/`
@@ -103,6 +134,69 @@ Base URL: `/api/users/`
 - **Auth**: Required
 - **Permissions**: IsAuthenticated, admin only
 - **Response**: Success message
+
+## Sales & Analytics
+
+### GET `/api/users/sales/totals/`
+- **Description**: Calculate and retrieve the total sum of `unit_price` and `shell_price` across all products
+- **Auth**: Required
+- **Permissions**: IsAuthenticated
+- **Response**:
+  ```json
+  {
+    "total_unit_price": "decimal",
+    "total_shell_price": "decimal"
+  }
+  ```
+
+### GET `/api/users/sales/profit/`
+- **Description**: Calculate real-time profit using the formula: `total_revenue (sum of sale_price * quantity) - total_cost (sum of product unit_price * quantity)`
+- **Auth**: Required
+- **Permissions**: IsAuthenticated
+- **Response**:
+  ```json
+  {
+    "profit": "decimal"
+  }
+  ```
+
+### GET `/api/users/sales/`
+- **Description**: List sales transactions (includes magasin ID, shop name, seller user ID, and seller name)
+- **Auth**: Required
+- **Permissions**: IsAuthenticated
+- **Filtering**:
+  - Admin: All sales
+  - Magasin: Sales related to their magasin's products
+  - Employer: Sales related to their magasin's products
+- **Response**: List of sales with structured store/employer data.
+
+### POST `/api/users/sales/`
+- **Description**: Record a new sale transaction (automatically decrements the corresponding product's stock, and automatically associates the seller's user profile and the product's magasin profile)
+- **Auth**: Required
+- **Permissions**: IsAuthenticated
+- **Body**:
+  ```json
+  {
+    "product": "int (ID)",
+    "quantity": "int",
+    "sale_price": "decimal"
+  }
+  ```
+- **Response**:
+  ```json
+  {
+    "id": 1,
+    "product": 1,
+    "magasin": 1,
+    "shop_name": "My Shop",
+    "seller": 2,
+    "seller_name": "Employer Name",
+    "quantity": 5,
+    "sale_price": "10.00",
+    "total_price": "50.00",
+    "sold_at": "timestamp"
+  }
+  ```
 
 ## Admin
 

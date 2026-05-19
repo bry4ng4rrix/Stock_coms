@@ -216,6 +216,8 @@ class Product(models.Model):
 class Sale(models.Model):
     """Model representing a sale transaction for a product."""
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="sales")
+    magasin = models.ForeignKey("MagasinProfile", on_delete=models.SET_NULL, related_name="sales", null=True, blank=True)
+    seller = models.ForeignKey(CustomUser, on_delete=models.SET_NULL, related_name="sales", null=True, blank=True)
     quantity = models.PositiveIntegerField()
     sale_price = models.DecimalField(max_digits=10, decimal_places=2)  # price per unit at sale (shell_price)
     total_price = models.DecimalField(max_digits=12, decimal_places=2, editable=False)

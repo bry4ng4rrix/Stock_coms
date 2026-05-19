@@ -10,6 +10,7 @@ from .views import (
     TotalsView,
     ProfitView,
     SaleViewSet,
+    UsersByMagasinView,
 )
 
 from rest_framework_simplejwt.views import TokenRefreshView
@@ -37,7 +38,9 @@ urlpatterns = [
     path("approve/<int:user_id>/", ApproveUserView.as_view()),
     # Role management
     path("role/<int:user_id>/", RoleManagementView.as_view()),
-    # Totals and profit
-    path("totals/", TotalsView.as_view()),
-    path("profit/", ProfitView.as_view()),
+    # Totals and profit (prepended with sales/)
+    path("sales/totals/", TotalsView.as_view()),
+    path("sales/profit/", ProfitView.as_view()),
+    # List of users grouped by magasin
+    path("magasins/users/", UsersByMagasinView.as_view()),
 ] + router.urls

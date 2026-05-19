@@ -47,6 +47,14 @@ Application de gestion de stock multi-rôles avec système d'authentification JW
 - **Validation**: Vérifie que le rôle est valide (admin, magasin, employer)
 - **Response**: Message de confirmation avec l'ancien et le nouveau rôle
 
+### Liste des Utilisateurs par Magasin (Users by Magasin)
+- **Consultation groupée** : Permet de lister tous les utilisateurs (gérants et employés) en les regroupant par magasin.
+- **Accès restreint** :
+  - **Admin**: Voit l'ensemble des magasins avec tous leurs utilisateurs.
+  - **Magasin**: Ne voit que son propre magasin et ses employés.
+  - **Employer**: Ne voit que son propre magasin et ses collègues/gérant.
+- **Endpoint**: GET `/api/users/magasins/users/`
+
 ---
 
 ## 📦 Gestion des Produits
@@ -89,6 +97,32 @@ Application de gestion de stock multi-rôles avec système d'authentification JW
 - **Retrait** d'un produit du stock
 - **Permission**: Réservée au rôle admin uniquement
 - **Action**: Suppression définitive du produit
+
+---
+
+## 📈 Ventes et Analyses Financières
+
+### Historique des Ventes (Sale Management)
+- **Enregistrement des ventes** : Permet de vendre des produits tout en conservant un historique complet.
+- **Stock automatique** : Lors de la création d'une vente, le stock disponible du produit (`initial_quantity`) est automatiquement déduit du nombre d'articles vendus.
+- **Traçabilité complète** : Lors de la vente, le système enregistre automatiquement :
+  - L'**identifiant du magasin** (`magasin_id` / `shop_name`) où le produit est stocké.
+  - Le **nom de l'employé** (`seller_name`) ou gérant qui réalise la vente (lié au profil connecté).
+- **Détails de transaction** : Stockage du produit, de la quantité, du prix unitaire de vente (`sale_price`), du total calculé automatiquement (`total_price`), de la date de vente (`sold_at`), du vendeur (`seller`) et du magasin (`magasin`).
+- **Filtrage par rôle** :
+  - **Admin**: Accès à tout l'historique des ventes.
+  - **Magasin**: Accès aux ventes de sa boutique uniquement.
+  - **Employer**: Accès aux ventes de sa boutique uniquement.
+
+### Totaux de Prix (Totals)
+- **Calcul global** : Fournit instantanément la somme globale de tous les `unit_price` (prix d'achat) et de tous les `shell_price` (prix de vente conseillé) de tous les produits enregistrés dans le système.
+- **Endpoint dédié** : GET `/api/users/sales/totals/`
+
+### Calcul du Bénéfice (Profit Analytics)
+- **Calcul en temps réel** : Analyse financière des profits réels de l'entreprise/magasin selon la formule :
+  $$\text{Bénéfice} = \text{Revenu Total} - \text{Coût Total}$$
+  Soit : $\sum (\text{sale\_price} \times \text{quantity}) - \sum (\text{product.unit\_price} \times \text{quantity})$.
+- **Endpoint dédié** : GET `/api/users/sales/profit/`
 
 ---
 

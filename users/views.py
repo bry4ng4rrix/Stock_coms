@@ -4,7 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework import status, viewsets
 from django.db.models import Sum, F, DecimalField
 
-from .models import CustomUser, Product, MagasinProfile, Sale
+from .models import CustomUser, Product, MagasinProfile, Sale, EmployerProfile
 from .serializers import RegisterSerializer, ProductSerializer, SaleSerializer
 from .permissions import IsAdmin
 from rest_framework_simplejwt.views import TokenViewBase
@@ -127,9 +127,9 @@ class SaleViewSet(viewsets.ModelViewSet):
             return Sale.objects.filter(product__magasin__employers__user=user)
         return Sale.objects.none()
     def perform_create(self, serializer):
-        sale = serializer.save()
+        product = serializer.validated_data.get('product')
+        sale = serializer.save(seller=self.request.user, magasin=product.magasin)
         # Deduct the sold quantity from the product's stock
-        product = sale.product
         product.initial_quantity -= sale.quantity
         product.save()
 
@@ -166,3 +166,61 @@ class ProductViewSet(viewsets.ModelViewSet):
         if request.user.role != "admin":
             return Response({"error": "Seul admin peut supprimer"}, status=403)
         return super().destroy(request, *args, **kwargs)
+
+# =========================
+# USERS BY MAGASIN VIEW
+# =========================
+class UsersByMagasinView(APIView):
+    permission_classes = [IsAuthenticated]
+    def get(self, request):
+        user = request.user
+        response_data = []
+
+        # Admin can see all magasins
+        if user.role == "admin":
+            magasins = MagasinProfile.objects.all()
+        # Magasin can see only their own magasin
+        elif user.role == "magasin":
+            magasins = MagasinProfile.objects.filter(user=user)
+        # Employer can see only their own magasin
+        elif user.role == "employer":
+            try:
+                employer_profile = EmployerProfile.objects.get(user=user)
+                if employer_profile.magasin:
+                    magasins = MagasinProfile.objects.filter(id=employer_profile.magasin.id)
+                else:
+                    return Response([])
+            except EmployerProfile.DoesNotExist:
+                return Response({"error": "Employer profile not found"}, status=404)
+        else:
+            return Response({"error": "Role not supported"}, status=403)
+
+        for mag in magasins:
+            manager_data = {
+                "id": mag.user.id,
+                "full_name": mag.user.full_name,
+                "email": mag.user.email,
+                "is_confirmed": mag.user.is_confirmed,
+                "role": mag.user.role,
+            } if mag.user else None
+
+            employers_qs = EmployerProfile.objects.filter(magasin=mag)
+            employers_list = []
+            for emp in employers_qs:
+                employers_list.append({
+                    "id": emp.user.id,
+                    "full_name": emp.user.full_name,
+                    "email": emp.user.email,
+                    "is_confirmed": emp.user.is_confirmed,
+                    "position": emp.position,
+                    "role": emp.user.role,
+                })
+
+            response_data.append({
+                "magasin_id": mag.id,
+                "shop_name": mag.shop_name,
+                "manager": manager_data,
+                "employers": employers_list
+            })
+
+        return Response(response_data)
