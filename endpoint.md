@@ -198,6 +198,15 @@ Base URL: `/api/users/`
   }
   ```
 
+### GET `/api/users/dashboard/`
+- **Description**: Unified dashboard endpoint that automatically identifies the authenticated user's role and returns customized statistics, KPIs, and data lists according to security/confidentiality clearance levels.
+- **Auth**: Required
+- **Permissions**: IsAuthenticated
+- **Response Schemas by Role**:
+  - **Admin**: Returns overall sales, profit, full stock value, list of stores, list of employees, top-performing products/shops, soon-expiring list.
+  - **Magasin**: Returns store-specific sales counts, total stock value, store profits, top sellers, and low stock warnings (sensitive company-wide variables are hidden).
+  - **Employer**: Returns employee-specific daily count, total amount sold, quantity sold, and their recent sales list.
+
 ## Admin
 
 ### GET `/admin/`

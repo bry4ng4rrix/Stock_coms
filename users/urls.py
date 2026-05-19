@@ -11,6 +11,7 @@ from .views import (
     ProfitView,
     SaleViewSet,
     UsersByMagasinView,
+    DashboardView,
 )
 
 from rest_framework_simplejwt.views import TokenRefreshView
@@ -43,4 +44,6 @@ urlpatterns = [
     path("sales/profit/", ProfitView.as_view()),
     # List of users grouped by magasin
     path("magasins/users/", UsersByMagasinView.as_view()),
+    # Dashboard stats
+    path("dashboard/", DashboardView.as_view()),
 ] + router.urls

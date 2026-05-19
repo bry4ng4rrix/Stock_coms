@@ -124,6 +124,16 @@ Application de gestion de stock multi-rôles avec système d'authentification JW
   Soit : $\sum (\text{sale\_price} \times \text{quantity}) - \sum (\text{product.unit\_price} \times \text{quantity})$.
 - **Endpoint dédié** : GET `/api/users/sales/profit/`
 
+### Tableaux de Bord Unifiés (Dashboard API)
+- **Visualisation par Rôle** : Fournit un tableau de bord analytique ultra-complet, performant et automatisé qui s'adapte dynamiquement au profil de l'utilisateur connecté via un seul endpoint : `GET /api/users/dashboard/`.
+- **Indicateurs Clés de Performance (KPIs) calculés** :
+  - **Admin** : Chiffre d'affaires total, bénéfices totaux, valeur totale du stock (prix d'achat), nombre de magasins/employés/produits/ventes, ventes et bénéfices du jour, alertes stock faible, et décompte des produits expirés ou arrivant à expiration (sous 30 jours).
+  - **Magasin (Gérant)** : Nombre de ventes de sa boutique, chiffre d'affaires et bénéfices du jour de sa boutique, valeur totale de son propre stock, produits en rupture/stock faible, et produits expirés de sa boutique.
+  - **Employer (Vendeur)** : Mes ventes du jour (compteur), montant total de mes transactions de ventes, nombre de produits vendus, et liste de mes dernières transactions.
+- **Sécurité et Isolation des Données (Cloisonnement SaaS)** :
+  - Les gérants de magasin et employés ne peuvent en aucun cas consulter les bénéfices globaux de la société ou les données de magasins tiers.
+  - Les prix d'achat individuels (`unit_price`) sont strictement exclus des listes pour les profils non-admins.
+
 ---
 
 ## 🔐 Sécurité et Permissions
