@@ -35,11 +35,29 @@ Base URL: `/api/users/`
 - **Body**: Depends on RegisterSerializer fields
 - **Response**: Success message
 
+### GET `/api/users/me/`
+- **Description**: Get current user profile
+- **Auth**: Required
+- **Permissions**: IsAuthenticated
+- **Response**: User profile data
+
 ### PUT `/api/users/approve/<user_id>/`
 - **Description**: Approve a user account
 - **Auth**: Required (admin or magasin role only)
 - **Permissions**: IsAuthenticated, role in ["admin", "magasin"]
 - **Response**: Success message
+
+### PUT `/api/users/role/<user_id>/`
+- **Description**: Modify user role (admin only)
+- **Auth**: Required (admin role only)
+- **Permissions**: IsAuthenticated, IsAdmin
+- **Body**:
+  ```json
+  {
+    "role": "admin|magasin|employer"
+  }
+  ```
+- **Response**: Success message with old and new role
 
 ## Products
 
