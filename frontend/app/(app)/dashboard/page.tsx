@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { createClient } from '@/utils/supabase/client';
+import { djangoClient } from '@/lib/django-client';
 import { useCurrentUser } from '@/lib/auth/useCurrentUser';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -23,9 +23,8 @@ const fmt = (n: number) =>
 
 export default function DashboardPage() {
   const { user } = useCurrentUser();
-  const supabase  = createClient();
-
   const [loading, setLoading] = useState(true);
+  const [role, setRole] = useState<string>('employee');
 
   // KPIs
   const [kpis, setKpis] = useState({
@@ -35,6 +34,9 @@ export default function DashboardPage() {
     totalEmployees:  0,
     lowStockCount:   0,
     outOfStockCount: 0,
+    mySalesToday:    0,
+    totalAmountSold: 0,
+    clientsCount:    0,
   });
 
   // Charts
@@ -45,139 +47,128 @@ export default function DashboardPage() {
   const [expiringProducts, setExpiringProducts] = useState<any[]>([]);
   const [movementStats, setMovementStats] = useState<{fastest: any[], slowest: any[]}>({ fastest: [], slowest: [] });
 
-  const getLast7Days = () => {
-    const days = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
-    const result = [];
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      result.push({ fullDate: d.toISOString().split('T')[0], label: days[d.getDay()] });
-    }
-    return result;
-  };
-
   const fetchDashboard = useCallback(async () => {
     try {
       setLoading(true);
 
-      // 1. Products (RLS auto-filters by store)
-      const { data: products } = await supabase
-        .from('products')
-        .select('id, name, sku, quantity, unit_price, reorder_level, status, category, expiry_date');
+      // Fetch from Django REST API
+      const dashboardData = await djangoClient.get<any>('/users/dashboard/');
+      const products = await djangoClient.products.list();
 
-      // 2. Employees in the same store
-      const { data: employees } = await supabase
-        .from('users')
-        .select('id, role, status')
-        .neq('role', 'admin')
-        .eq('status', 'approved');
+      const userRole = dashboardData.role || 'employee';
+      setRole(userRole);
 
-      // 3. Recent movements (avec utilisateur pour traçabilité)
-      const { data: movementsRecent } = await supabase
-        .from('stock_movements')
-        .select('id, type, quantity, created_at, products:product_id(name, sku), users:user_id(full_name)')
-        .order('created_at', { ascending: false })
-        .limit(8);
+      const rKpis = dashboardData.kpis || {};
+      const rLists = dashboardData.lists || {};
 
-      // 4. Weekly trend
-      const sevenDaysAgo = new Date();
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-      const { data: weeklyData } = await supabase
-        .from('stock_movements')
-        .select('type, quantity, created_at, products:product_id(name)')
-        .gte('created_at', sevenDaysAgo.toISOString());
+      // Compute statistics and category mapping from products
+      let totalQuantity   = 0;
+      let totalValue      = 0;
+      let lowStockCount   = 0;
+      let outOfStockCount = 0;
+      const categoryMap: Record<string, number> = {};
+      const lowProducts: any[] = [];
 
-      // ── Compute KPIs ─────────────────────────────────────────
-      if (products) {
-        let totalQuantity   = 0;
-        let totalValue      = 0;
-        let lowStockCount   = 0;
-        let outOfStockCount = 0;
-        const categoryMap: Record<string, number> = {};
-        const lowProducts: any[] = [];
-
-        products.forEach((p) => {
-          const qty = p.quantity ?? 0;
-          totalQuantity += qty;
-          totalValue    += qty * (p.unit_price ?? 0);
-          if (p.status === 'low')          { lowStockCount++;   lowProducts.push(p); }
-          if (p.status === 'out_of_stock') { outOfStockCount++; lowProducts.push(p); }
-          categoryMap[p.category || 'Autre'] = (categoryMap[p.category || 'Autre'] || 0) + qty;
-        });
-
-        setKpis({
-          totalProducts:   products.length,
-          totalQuantity,
-          totalValue,
-          totalEmployees:  employees?.length ?? 0,
-          lowStockCount,
-          outOfStockCount,
-        });
-
-        setCategoryChart(
-          Object.entries(categoryMap)
-            .map(([name, value]) => ({ name, value }))
-            .sort((a, b) => b.value - a.value),
-        );
-
-        setLowStockProducts(lowProducts.slice(0, 8));
-
-        // ── Expiring products (within 30 days) ───────────────────
-        const today = new Date();
-        const thirtyDaysFromNow = new Date();
-        thirtyDaysFromNow.setDate(today.getDate() + 30);
+      products.forEach((p: any) => {
+        const qty = p.initial_quantity ?? 0;
+        totalQuantity += qty;
+        totalValue    += qty * (p.unit_price ?? 0);
         
-        const expiring = products
-          .filter(p => p.expiry_date && new Date(p.expiry_date) <= thirtyDaysFromNow)
-          .sort((a, b) => new Date(a.expiry_date!).getTime() - new Date(b.expiry_date!).getTime());
-        
-        setExpiringProducts(expiring.slice(0, 8));
-      }
+        const alertThreshold = p.alert_threshold ?? 5;
+        if (qty === 0) {
+          outOfStockCount++;
+          lowProducts.push({ ...p, status: 'out_of_stock', quantity: qty });
+        } else if (qty <= alertThreshold) {
+          lowStockCount++;
+          lowProducts.push({ ...p, status: 'low', quantity: qty });
+        }
 
-      // ── Recent movements ─────────────────────────────────────
-      if (movementsRecent) setRecentMovements(movementsRecent);
+        categoryMap[p.category || 'Autre'] = (categoryMap[p.category || 'Autre'] || 0) + qty;
+      });
 
-      // ── Weekly trend ─────────────────────────────────────────
-      if (weeklyData) {
-        const last7Days = getLast7Days();
-        setWeeklyTrend(
-          last7Days.map((day) => {
-            const dayMvts  = weeklyData.filter((m) => m.created_at.startsWith(day.fullDate));
-            const entrées  = dayMvts.filter((m) => m.type === 'entry').reduce((s, m) => s + (m.quantity || 0), 0);
-            const sorties  = dayMvts.filter((m) => m.type === 'exit').reduce((s, m) => s + (m.quantity || 0), 0);
-            return { date: day.label, entrées, sorties };
-          }),
-        );
-      }
-
-      // ── Movement Stats for AI ──────────────────────────────
-      if (products && weeklyData) {
-        const statsMap: Record<string, { name: string; outQty: number }> = {};
-        products.forEach((p) => {
-          statsMap[p.name] = { name: p.name, outQty: 0 };
-        });
-        weeklyData.forEach((m) => {
-          if (m.type === 'exit' && m.products?.name) {
-            if (!statsMap[m.products.name]) {
-              statsMap[m.products.name] = { name: m.products.name, outQty: 0 };
-            }
-            statsMap[m.products.name].outQty += (m.quantity || 0);
-          }
-        });
-        const sorted = Object.values(statsMap).sort((a, b) => b.outQty - a.outQty);
-        setMovementStats({
-          fastest: sorted.slice(0, 5),
-          slowest: sorted.filter((s) => s.outQty === 0).slice(0, 5),
+      // Weekly trend computed from recent sales
+      const days = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
+      const last7Days = [];
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        last7Days.push({
+          fullDate: d.toISOString().split('T')[0],
+          label: days[d.getDay()],
+          entrées: 0,
+          sorties: 0,
         });
       }
+
+      const salesList = rLists.recent_sales || [];
+      salesList.forEach((sale: any) => {
+        const soldDateStr = sale.sold_at?.split('T')[0];
+        const dayMatch = last7Days.find((d) => d.fullDate === soldDateStr);
+        if (dayMatch) {
+          dayMatch.sorties += sale.quantity || 0;
+        }
+      });
+
+      setWeeklyTrend(last7Days);
+
+      setKpis({
+        totalProducts: products.length,
+        totalQuantity,
+        totalValue: rKpis.total_stock_value || totalValue,
+        totalEmployees: rKpis.total_employers || rKpis.total_magasins || 0,
+        lowStockCount: rKpis.low_stock_count || lowStockCount,
+        outOfStockCount,
+        mySalesToday: rKpis.my_sales_today || rKpis.sales_today || 0,
+        totalAmountSold: rKpis.total_amount_sold || rKpis.total_revenue || 0,
+        clientsCount: rKpis.clients_count || rKpis.total_sales || 0,
+      });
+
+      setCategoryChart(
+        Object.entries(categoryMap)
+          .map(([name, value]) => ({ name, value }))
+          .sort((a, b) => b.value - a.value),
+      );
+
+      setLowStockProducts(lowProducts.slice(0, 8));
+
+      // Expiring products (within 30 days)
+      const today = new Date();
+      const thirtyDaysFromNow = new Date();
+      thirtyDaysFromNow.setDate(today.getDate() + 30);
+      
+      const expiring = products
+        .filter((p: any) => p.expiry_date && new Date(p.expiry_date) <= thirtyDaysFromNow)
+        .sort((a: any, b: any) => new Date(a.expiry_date!).getTime() - new Date(b.expiry_date!).getTime())
+        .map((p: any) => ({ ...p, quantity: p.initial_quantity }));
+      
+      setExpiringProducts(expiring.slice(0, 8));
+
+      setRecentMovements(salesList.slice(0, 8));
+
+      // Movement Stats for AI推荐
+      const topSales = rLists.top_products || [];
+      const fastest = topSales.map((t: any) => ({
+        name: t.product__name || t.name || 'Produit',
+        outQty: t.qty_sold || t.quantity_sold || 0,
+      }));
+      setMovementStats({
+        fastest,
+        slowest: products
+          .filter((p: any) => !topSales.some((t: any) => (t.product__name || t.name) === p.name))
+          .slice(0, 5)
+          .map((p: any) => ({ name: p.name, outQty: 0 })),
+      });
+
     } catch (err) {
       console.error('Dashboard error:', err);
     } finally {
       setLoading(false);
     }
-  }, [supabase]);
+  }, []);
 
-  useEffect(() => { fetchDashboard(); }, [fetchDashboard]);
+  useEffect(() => {
+    fetchDashboard();
+  }, [fetchDashboard]);
 
   // ── KPI Card helper ───────────────────────────────────────────
   const KpiCard = ({
@@ -219,40 +210,73 @@ export default function DashboardPage() {
 
       {/* ── KPI Cards ─────────────────────────────────────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-        <div className="xl:col-span-2">
-          <KpiCard
-            title="Valeur du stock"
-            value={`${fmt(kpis.totalValue)} Ar`}
-            sub="Valeur totale de l'inventaire"
-            icon={DollarSign}
-          />
-        </div>
-        <KpiCard
-          title="Produits"
-          value={kpis.totalProducts}
-          sub="Références en catalogue"
-          icon={Package}
-        />
-        <KpiCard
-          title="Unités en stock"
-          value={fmt(kpis.totalQuantity)}
-          sub="Total toutes références"
-          icon={ShoppingBag}
-        />
-        <KpiCard
-          title="Employés actifs"
-          value={kpis.totalEmployees}
-          sub="Personnel approuvé"
-          icon={Users}
-        />
-        <KpiCard
-          title="Alertes stock"
-          value={kpis.lowStockCount + kpis.outOfStockCount}
-          sub={`${kpis.outOfStockCount} rupture(s), ${kpis.lowStockCount} faible(s)`}
-          icon={AlertTriangle}
-          color="text-orange-600"
-          accent={kpis.lowStockCount + kpis.outOfStockCount > 0 ? 'border-orange-200 bg-orange-50 dark:bg-orange-950/20' : ''}
-        />
+        {role === 'employer' ? (
+          <>
+            <div className="xl:col-span-2">
+              <KpiCard
+                title="Mes ventes du jour"
+                value={`${kpis.mySalesToday} ventes`}
+                sub="Transactions effectuées aujourd'hui"
+                icon={TrendingUp}
+                color="text-green-600"
+              />
+            </div>
+            <div className="xl:col-span-2">
+              <KpiCard
+                title="Chiffre d'affaires personnel"
+                value={`${fmt(kpis.totalAmountSold)} Ar`}
+                sub="Montant total vendu par vous"
+                icon={DollarSign}
+                color="text-blue-600"
+              />
+            </div>
+            <div className="xl:col-span-2">
+              <KpiCard
+                title="Clients servis"
+                value={kpis.clientsCount}
+                sub="Nombre total de transactions"
+                icon={Users}
+              />
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="xl:col-span-2">
+              <KpiCard
+                title="Valeur du stock"
+                value={`${fmt(kpis.totalValue)} Ar`}
+                sub="Valeur totale de l'inventaire"
+                icon={DollarSign}
+              />
+            </div>
+            <KpiCard
+              title="Produits"
+              value={kpis.totalProducts}
+              sub="Références en catalogue"
+              icon={Package}
+            />
+            <KpiCard
+              title="Unités en stock"
+              value={fmt(kpis.totalQuantity)}
+              sub="Total toutes références"
+              icon={ShoppingBag}
+            />
+            <KpiCard
+              title={role === 'admin' ? "Admins/Magasins" : "Employés actifs"}
+              value={kpis.totalEmployees}
+              sub="Personnel enregistré"
+              icon={Users}
+            />
+            <KpiCard
+              title="Alertes stock"
+              value={kpis.lowStockCount + kpis.outOfStockCount}
+              sub={`${kpis.outOfStockCount} rupture(s), ${kpis.lowStockCount} faible(s)`}
+              icon={AlertTriangle}
+              color="text-orange-600"
+              accent={kpis.lowStockCount + kpis.outOfStockCount > 0 ? 'border-orange-200 bg-orange-50 dark:bg-orange-950/20' : ''}
+            />
+          </>
+        )}
       </div>
 
       <AIAnalysis 
@@ -266,8 +290,8 @@ export default function DashboardPage() {
         {/* Weekly trend */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Mouvements — 7 derniers jours</CardTitle>
-            <CardDescription>Entrées et sorties de stock</CardDescription>
+            <CardTitle className="text-lg">Ventes — 7 derniers jours</CardTitle>
+            <CardDescription>Évolution journalière des sorties</CardDescription>
           </CardHeader>
           <CardContent className="pt-4">
             {loading ? (
@@ -280,8 +304,7 @@ export default function DashboardPage() {
                   <YAxis />
                   <Tooltip />
                   <Legend />
-                  <Line type="monotone" dataKey="entrées" stroke="#3b82f6" strokeWidth={2} dot={false} />
-                  <Line type="monotone" dataKey="sorties" stroke="#ef4444" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="sorties" name="Quantités vendues" stroke="#ef4444" strokeWidth={2} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
             )}
@@ -335,16 +358,16 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* ── Recent Movements + Low Stock ─────────────────────── */}
+      {/* ── Recent Sales + Low Stock ─────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recent Movements */}
+        {/* Recent Sales */}
         <Card>
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <TrendingUp className="h-5 w-5" />
-              Activités récentes
+              Ventes récentes
             </CardTitle>
-            <CardDescription>8 derniers mouvements</CardDescription>
+            <CardDescription>8 dernières transactions enregistrées</CardDescription>
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -352,35 +375,34 @@ export default function DashboardPage() {
                 {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}
               </div>
             ) : recentMovements.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-8">Aucun mouvement enregistré</p>
+              <p className="text-sm text-muted-foreground text-center py-8">Aucune vente enregistrée</p>
             ) : (
               <div className="space-y-3">
-                {recentMovements.map((m) => (
-                  <div key={m.id} className="flex items-center gap-3 p-3 rounded-lg border">
-                    <div className={`flex-shrink-0 p-1.5 rounded-full ${
-                      m.type === 'entry' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                    }`}>
-                      {m.type === 'entry'
-                        ? <ArrowUp className="h-4 w-4" />
-                        : <ArrowDown className="h-4 w-4" />
-                      }
+                {recentMovements.map((m, i) => (
+                  <div key={i} className="flex items-center gap-3 p-3 rounded-lg border">
+                    <div className="flex-shrink-0 p-1.5 rounded-full bg-red-100 text-red-700">
+                      <ArrowDown className="h-4 w-4" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm truncate">{m.products?.name ?? 'Produit inconnu'}</p>
+                      <p className="font-medium text-sm truncate">{m.product_name ?? 'Produit inconnu'}</p>
                       <p className="text-xs text-muted-foreground">
-                        {new Date(m.created_at).toLocaleDateString('fr-FR', {
+                        {new Date(m.sold_at).toLocaleDateString('fr-FR', {
                           day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
                         })}
-                        {m.users?.full_name && (
-                          <span className="ml-1">· {m.users.full_name}</span>
+                        {m.seller_name && (
+                          <span className="ml-1">· {m.seller_name}</span>
+                        )}
+                        {m.shop_name && (
+                          <span className="ml-1">· ({m.shop_name})</span>
                         )}
                       </p>
                     </div>
-                    <span className={`text-sm font-semibold ${
-                      m.type === 'entry' ? 'text-green-600' : 'text-red-600'
-                    }`}>
-                      {m.type === 'entry' ? '+' : '-'}{m.quantity}
-                    </span>
+                    <div className="text-right">
+                      <span className="text-sm font-semibold text-red-600">
+                        -{m.quantity}
+                      </span>
+                      <p className="text-[10px] text-muted-foreground font-mono">{fmt(m.total_price || 0)} Ar</p>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -440,3 +462,4 @@ export default function DashboardPage() {
     </div>
   );
 }
+

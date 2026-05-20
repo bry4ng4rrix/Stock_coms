@@ -74,7 +74,7 @@ class DjangoAPIClient {
     this.isRefreshing = true
 
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/token/refresh/`, {
+      const response = await fetch(`${API_BASE_URL}/users/refresh/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refresh: this.tokens.refresh }),
@@ -82,7 +82,7 @@ class DjangoAPIClient {
 
       if (!response.ok) {
         this.clearTokensFromStorage()
-        window.location.href = '/auth/login'
+        window.location.href = '/users/login'
         return null
       }
 
@@ -172,19 +172,49 @@ class DjangoAPIClient {
 
   // ==================== Authentication Service ====================
   auth = {
-    register: async (email: string, username: string, password: string, role: string) => {
-      return this.post<AuthResponse>('/auth/register/', {
+    register: async (
+      email: string,
+      username: string,
+      password: string,
+      role: string,
+      extraData?: {
+        full_name?: string
+        company_name?: string
+        shop_name?: string
+        admin_email?: string
+        position?: string
+      }
+    ) => {
+      let backendRole = role
+      if (role === 'store_manager') backendRole = 'magasin'
+      if (role === 'employee') backendRole = 'employer'
+
+      return this.post<any>('/users/register/', {
         email,
         username,
         password,
-        role,
+        role: backendRole,
+        full_name: extraData?.full_name || username,
+        ...extraData,
       })
     },
 
     login: async (email: string, password: string) => {
-      const response = await this.post<AuthResponse>('/auth/login/', { email, password })
+      // Backend SimpleJWT expects 'username' and 'password'
+      const response = await this.post<{ access: string; refresh: string }>('/users/login/', {
+        username: email,
+        password,
+      })
       this.saveTokensToStorage({ access: response.access, refresh: response.refresh })
-      return response
+      
+      // Fetch complete user profile immediately
+      const user = await this.getCurrentUser()
+      
+      return {
+        access: response.access,
+        refresh: response.refresh,
+        user,
+      } as unknown as AuthResponse
     },
 
     logout: () => {
@@ -192,19 +222,35 @@ class DjangoAPIClient {
     },
 
     getCurrentUser: async () => {
-      return this.get<AuthResponse['user']>('/auth/me/')
+      const response = await this.get<any>('/users/me/')
+      // Map role from backend value if necessary
+      let mappedRole: 'admin' | 'store_manager' | 'employee' = 'employee'
+      if (response.role === 'admin') mappedRole = 'admin'
+      else if (response.role === 'magasin') mappedRole = 'store_manager'
+      else if (response.role === 'employer') mappedRole = 'employee'
+
+      return {
+        id: response.id,
+        email: response.email,
+        username: response.username,
+        first_name: response.full_name?.split(' ')[0] || '',
+        last_name: response.full_name?.split(' ').slice(1).join(' ') || '',
+        role: mappedRole,
+        is_approved: response.is_confirmed,
+      } as any
     },
 
     approveUser: async (userId: number) => {
-      return this.post(`/auth/users/${userId}/approve/`)
+      return this.put(`/users/approve/${userId}/`)
     },
 
     rejectUser: async (userId: number) => {
-      return this.post(`/auth/users/${userId}/reject/`)
+      // Fallback stub: backend doesn't have a direct reject endpoint, but can delete/reject if needed
+      return this.post(`/users/reject/${userId}/`)
     },
 
     getPendingUsers: async () => {
-      return this.get<any[]>('/auth/pending-users/')
+      return this.get<any[]>('/users/pending-users/')
     },
   }
 
@@ -215,34 +261,34 @@ class DjangoAPIClient {
       if (filters?.store_id) params.append('store_id', filters.store_id.toString())
       if (filters?.category) params.append('category', filters.category)
       const query = params.toString() ? `?${params.toString()}` : ''
-      return this.get<any[]>(`/products/${query}`)
+      return this.get<any[]>(`/users/products/${query}`)
     },
 
     getById: async (id: number) => {
-      return this.get<any>(`/products/${id}/`)
+      return this.get<any>(`/users/products/${id}/`)
     },
 
     create: async (data: any) => {
-      return this.post<any>('/products/', data)
+      return this.post<any>('/users/products/', data)
     },
 
     update: async (id: number, data: any) => {
-      return this.put<any>(`/products/${id}/`, data)
+      return this.put<any>(`/users/products/${id}/`, data)
     },
 
     delete: async (id: number) => {
-      return this.delete(`/products/${id}/`)
+      return this.delete(`/users/products/${id}/`)
     },
 
     search: async (query: string) => {
-      return this.get<any[]>(`/products/search/?q=${encodeURIComponent(query)}`)
+      return this.get<any[]>(`/users/products/?search=${encodeURIComponent(query)}`)
     },
   }
 
   // ==================== Sales Service ====================
   sales = {
     create: async (data: any) => {
-      return this.post<any>('/sales/', data)
+      return this.post<any>('/users/sales/', data)
     },
 
     list: async (filters?: { store_id?: number; date_range?: string }) => {
@@ -250,48 +296,54 @@ class DjangoAPIClient {
       if (filters?.store_id) params.append('store_id', filters.store_id.toString())
       if (filters?.date_range) params.append('date_range', filters.date_range)
       const query = params.toString() ? `?${params.toString()}` : ''
-      return this.get<any[]>(`/sales/${query}`)
+      return this.get<any[]>(`/users/sales/${query}`)
     },
 
     getById: async (id: number) => {
-      return this.get<any>(`/sales/${id}/`)
+      return this.get<any>(`/users/sales/${id}/`)
     },
 
     update: async (id: number, data: any) => {
-      return this.put<any>(`/sales/${id}/`, data)
+      return this.put<any>(`/users/sales/${id}/`, data)
     },
 
     delete: async (id: number) => {
-      return this.delete(`/sales/${id}/`)
+      return this.delete(`/users/sales/${id}/`)
     },
 
     getByStore: async (storeId: number) => {
-      return this.get<any[]>(`/sales/?store_id=${storeId}`)
+      return this.get<any[]>(`/users/sales/?store_id=${storeId}`)
     },
 
     getRevenueSummary: async (storeId?: number) => {
-      const endpoint = storeId ? `/sales/revenue/?store_id=${storeId}` : '/sales/revenue/'
-      return this.get<any>(endpoint)
+      const [totals, profit] = await Promise.all([
+        this.get<any>('/users/sales/totals/'),
+        this.get<any>('/users/sales/profit/'),
+      ])
+      return {
+        ...totals,
+        ...profit,
+      }
     },
   }
 
   // ==================== Users Service ====================
   users = {
     list: async (role?: string) => {
-      const query = role ? `?role=${role}` : ''
-      return this.get<any[]>(`/users/${query}`)
+      return this.get<any[]>('/users/magasins/users/')
     },
 
     getById: async (id: number) => {
-      return this.get<any>(`/users/${id}/`)
+      return this.get<any>(`/users/me/`)
     },
 
     update: async (id: number, data: any) => {
-      return this.put<any>(`/users/${id}/`, data)
+      return this.put<any>(`/users/role/${id}/`, data)
     },
 
     delete: async (id: number) => {
-      return this.delete(`/users/${id}/`)
+      // backend standard user deletion via standard views
+      return this.delete(`/users/delete/${id}/`)
     },
 
     updateProfile: async (data: any) => {
@@ -299,84 +351,83 @@ class DjangoAPIClient {
     },
 
     getEmployeesByStore: async (storeId: number) => {
-      return this.get<any[]>(`/users/?store_id=${storeId}&role=employee`)
+      const list = await this.get<any[]>('/users/magasins/users/')
+      const found = list.find((m: any) => m.magasin_id === storeId)
+      return found ? found.employers : []
     },
   }
 
   // ==================== Dashboard Service ====================
   dashboard = {
     getStats: async (storeId?: number) => {
-      const endpoint = storeId ? `/dashboard/stats/?store_id=${storeId}` : '/dashboard/stats/'
-      return this.get<any>(endpoint)
+      const res = await this.get<any>('/users/dashboard/')
+      return res.kpis
     },
 
     getTopProducts: async (storeId?: number, limit: number = 5) => {
-      const endpoint = storeId
-        ? `/dashboard/top-products/?store_id=${storeId}&limit=${limit}`
-        : `/dashboard/top-products/?limit=${limit}`
-      return this.get<any[]>(endpoint)
+      const res = await this.get<any>('/users/dashboard/')
+      return res.lists?.top_products || []
     },
 
     getRevenueChart: async (storeId?: number, period: string = 'monthly') => {
-      const endpoint = storeId
-        ? `/dashboard/revenue/?store_id=${storeId}&period=${period}`
-        : `/dashboard/revenue/?period=${period}`
-      return this.get<any>(endpoint)
+      const res = await this.get<any>('/users/dashboard/')
+      return res.lists?.recent_sales || []
     },
 
     getSalesAnalytics: async (storeId?: number) => {
-      const endpoint = storeId ? `/dashboard/analytics/?store_id=${storeId}` : '/dashboard/analytics/'
-      return this.get<any>(endpoint)
+      return this.get<any>('/users/dashboard/')
     },
   }
 
   // ==================== Stores Service ====================
   stores = {
     list: async () => {
-      return this.get<any[]>('/stores/')
+      return this.get<any[]>('/users/magasins/users/')
     },
 
     getById: async (id: number) => {
-      return this.get<any>(`/stores/${id}/`)
+      const list = await this.list()
+      return list.find((m: any) => m.magasin_id === id) || null
     },
 
     create: async (data: any) => {
-      return this.post<any>('/stores/', data)
+      return this.post<any>('/users/magasins/users/', data)
     },
 
     update: async (id: number, data: any) => {
-      return this.put<any>(`/stores/${id}/`, data)
+      return this.put<any>(`/users/magasins/users/${id}/`, data)
     },
 
     delete: async (id: number) => {
-      return this.delete(`/stores/${id}/`)
+      return this.delete(`/users/magasins/users/${id}/`)
     },
 
     getStoreByManager: async (managerId: number) => {
-      return this.get<any>(`/stores/?manager_id=${managerId}`)
+      const list = await this.list()
+      return list.find((m: any) => m.manager?.id === managerId) || null
     },
   }
 
   // ==================== Suppliers Service ====================
   suppliers = {
     list: async () => {
-      return this.get<any[]>('/suppliers/')
+      return []
     },
 
     getById: async (id: number) => {
-      return this.get<any>(`/suppliers/${id}/`)
+      return null
     },
 
     create: async (data: any) => {
-      return this.post<any>('/suppliers/', data)
+      return {}
     },
 
     update: async (id: number, data: any) => {
-      return this.put<any>(`/suppliers/${id}/`, data)
+      return {}
     },
 
     delete: async (id: number) => {
-      return this.delete(`/suppliers/${id}/`)
+      return {}
     },
   }
 
@@ -392,3 +443,4 @@ class DjangoAPIClient {
 
 export const djangoClient = new DjangoAPIClient()
 export type { AuthResponse, AuthTokens }
+

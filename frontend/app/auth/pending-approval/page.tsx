@@ -49,7 +49,7 @@ export default function PendingApprovalPage() {
               Le processus d&apos;approbation peut prendre quelques minutes à quelques heures selon la disponibilité de l&apos;administrateur.
             </p>
 
-            <Link href="/auth/login" className="block">
+            <Link href="/login" className="block">
               <Button variant="outline" className="w-full">
                 Retour à la connexion
               </Button>

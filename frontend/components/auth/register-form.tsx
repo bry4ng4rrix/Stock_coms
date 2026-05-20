@@ -28,10 +28,14 @@ function friendlyError(msg: string) {
 
 export function RegisterForm() {
   const router = useRouter();
-
+  const [fullName, setFullName] = useState('');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [companyName, setCompanyName] = useState('');
+  const [shopName, setShopName] = useState('');
+  const [adminEmail, setAdminEmail] = useState('');
+  const [position, setPosition] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [role, setRole] = useState<'admin' | 'store_manager' | 'employee'>('employee');
@@ -39,15 +43,53 @@ export function RegisterForm() {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (!fullName.trim()) {
+      toast.error('Le nom complet est requis.');
+      return;
+    }
+
     if (password.length < 6) {
       toast.error('Le mot de passe doit contenir au moins 6 caractères.');
       return;
     }
 
+    if (role === 'admin' && !companyName.trim()) {
+      toast.error("Le nom de l'entreprise est requis.");
+      return;
+    }
+
+    if (role === 'store_manager') {
+      if (!shopName.trim()) {
+        toast.error('Le nom du magasin est requis.');
+        return;
+      }
+      if (!adminEmail.trim()) {
+        toast.error("L'email de l'administrateur est requis.");
+        return;
+      }
+    }
+
+    if (role === 'employee') {
+      if (!adminEmail.trim()) {
+        toast.error("L'email du responsable est requis.");
+        return;
+      }
+      if (!position.trim()) {
+        toast.error('Le poste / fonction est requis.');
+        return;
+      }
+    }
+
     setLoading(true);
 
     try {
-      await djangoClient.auth.register(email, username, password, role);
+      await djangoClient.auth.register(email, username || email.split('@')[0], password, role, {
+        full_name: fullName,
+        company_name: role === 'admin' ? companyName : undefined,
+        shop_name: role === 'store_manager' ? shopName : undefined,
+        admin_email: (role === 'store_manager' || role === 'employee') ? adminEmail : undefined,
+        position: role === 'employee' ? position : undefined,
+      });
 
       const msg =
         role === 'admin'
@@ -64,7 +106,7 @@ export function RegisterForm() {
   };
 
   return (
-    <Card className="w-full max-w-md shadow-xl">
+    <Card className="w-full max-w-md shadow-xl border-t-4 border-t-primary">
       <CardHeader className="space-y-1 pb-4">
         <CardTitle className="text-2xl font-bold">Créer un compte</CardTitle>
         <CardDescription>Rejoignez E-kajy Entana</CardDescription>
@@ -86,7 +128,7 @@ export function RegisterForm() {
                 }`}
               >
                 <RadioGroupItem value="admin" id="admin" />
-                <Label htmlFor="admin" className="cursor-pointer text-xs">
+                <Label htmlFor="admin" className="cursor-pointer text-xs font-semibold">
                   Admin
                 </Label>
               </div>
@@ -96,7 +138,7 @@ export function RegisterForm() {
                 }`}
               >
                 <RadioGroupItem value="store_manager" id="store_manager" />
-                <Label htmlFor="store_manager" className="cursor-pointer text-xs">
+                <Label htmlFor="store_manager" className="cursor-pointer text-xs font-semibold">
                   Manager
                 </Label>
               </div>
@@ -106,17 +148,141 @@ export function RegisterForm() {
                 }`}
               >
                 <RadioGroupItem value="employee" id="employee" />
-                <Label htmlFor="employee" className="cursor-pointer text-xs">
+                <Label htmlFor="employee" className="cursor-pointer text-xs font-semibold">
                   Employé
                 </Label>
               </div>
             </RadioGroup>
           </div>
 
+          {/* Full Name */}
+          <div className="space-y-1.5">
+            <label htmlFor="reg-fullname" className="text-sm font-medium">
+              Nom complet <span className="text-destructive">*</span>
+            </label>
+            <div className="relative">
+              <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+              <Input
+                id="reg-fullname"
+                type="text"
+                placeholder="Jean Dupont"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                disabled={loading}
+                className="pl-10"
+                required
+              />
+            </div>
+          </div>
+
+          {/* Dynamic Role Fields */}
+          {role === 'admin' && (
+            <div className="space-y-1.5 animate-in fade-in duration-200">
+              <label htmlFor="reg-companyname" className="text-sm font-medium">
+                Nom de l&apos;entreprise <span className="text-destructive">*</span>
+              </label>
+              <div className="relative">
+                <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                <Input
+                  id="reg-companyname"
+                  type="text"
+                  placeholder="Ma Super Entreprise"
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                  disabled={loading}
+                  className="pl-10"
+                  required
+                />
+              </div>
+            </div>
+          )}
+
+          {role === 'store_manager' && (
+            <div className="space-y-4 animate-in fade-in duration-200">
+              <div className="space-y-1.5">
+                <label htmlFor="reg-shopname" className="text-sm font-medium">
+                  Nom du magasin <span className="text-destructive">*</span>
+                </label>
+                <div className="relative">
+                  <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                  <Input
+                    id="reg-shopname"
+                    type="text"
+                    placeholder="Boutique Centre-Ville"
+                    value={shopName}
+                    onChange={(e) => setShopName(e.target.value)}
+                    disabled={loading}
+                    className="pl-10"
+                    required
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="reg-adminemail" className="text-sm font-medium">
+                  Email de l&apos;administrateur <span className="text-destructive">*</span>
+                </label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                  <Input
+                    id="reg-adminemail"
+                    type="email"
+                    placeholder="admin@boutique.com"
+                    value={adminEmail}
+                    onChange={(e) => setAdminEmail(e.target.value)}
+                    disabled={loading}
+                    className="pl-10"
+                    required
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {role === 'employee' && (
+            <div className="space-y-4 animate-in fade-in duration-200">
+              <div className="space-y-1.5">
+                <label htmlFor="reg-manageremail" className="text-sm font-medium">
+                  Email du responsable (Admin ou Gérant) <span className="text-destructive">*</span>
+                </label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                  <Input
+                    id="reg-manageremail"
+                    type="email"
+                    placeholder="gerant@boutique.com"
+                    value={adminEmail}
+                    onChange={(e) => setAdminEmail(e.target.value)}
+                    disabled={loading}
+                    className="pl-10"
+                    required
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="reg-position" className="text-sm font-medium">
+                  Poste / Fonction <span className="text-destructive">*</span>
+                </label>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                  <Input
+                    id="reg-position"
+                    type="text"
+                    placeholder="Caissier, Vendeur..."
+                    value={position}
+                    onChange={(e) => setPosition(e.target.value)}
+                    disabled={loading}
+                    className="pl-10"
+                    required
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Username */}
           <div className="space-y-1.5">
             <label htmlFor="reg-username" className="text-sm font-medium">
-              Nom d&apos;utilisateur
+              Nom d&apos;utilisateur <span className="text-muted-foreground text-xs">(Optionnel)</span>
             </label>
             <div className="relative">
               <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
@@ -129,7 +295,6 @@ export function RegisterForm() {
                 onChange={(e) => setUsername(e.target.value)}
                 disabled={loading}
                 className="pl-10"
-                required
               />
             </div>
           </div>
@@ -137,7 +302,7 @@ export function RegisterForm() {
           {/* Email */}
           <div className="space-y-1.5">
             <label htmlFor="reg-email" className="text-sm font-medium">
-              Email
+              Email <span className="text-destructive">*</span>
             </label>
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
@@ -158,7 +323,7 @@ export function RegisterForm() {
           {/* Password */}
           <div className="space-y-1.5">
             <label htmlFor="reg-password" className="text-sm font-medium">
-              Mot de passe
+              Mot de passe <span className="text-destructive">*</span>
             </label>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
@@ -187,7 +352,7 @@ export function RegisterForm() {
             <p className="text-xs text-muted-foreground">Minimum 6 caractères</p>
           </div>
 
-          <Button type="submit" className="w-full" disabled={loading}>
+          <Button type="submit" className="w-full mt-2" disabled={loading}>
             {loading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -201,7 +366,7 @@ export function RegisterForm() {
 
         <p className="mt-5 text-center text-sm text-muted-foreground">
           Déjà un compte?{' '}
-          <Link href="/auth/login" className="text-primary font-medium hover:underline">
+          <Link href="/login" className="text-primary font-medium hover:underline">
             Se connecter
           </Link>
         </p>
