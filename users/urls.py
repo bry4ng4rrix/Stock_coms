@@ -12,6 +12,7 @@ from .views import (
     SaleViewSet,
     UsersByMagasinView,
     DashboardView,
+    ApiEndpointsListView,
 )
 
 from rest_framework_simplejwt.views import TokenRefreshView
@@ -46,4 +47,6 @@ urlpatterns = [
     path("magasins/users/", UsersByMagasinView.as_view()),
     # Dashboard stats
     path("dashboard/", DashboardView.as_view()),
+    # Explore endpoints
+    path("endpoints/", ApiEndpointsListView.as_view()),
 ] + router.urls

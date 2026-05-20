@@ -284,3 +284,33 @@ Ce document rassemble tous les exemples de données (payloads JSON) pour tester 
   }
 }
 ```
+
+### 4.5 Liste Globale des Endpoints (Découverte API)
+* **Endpoint** : `GET /api/users/endpoints/`
+* **Auth** : Non requis (Public)
+* **Réponse** :
+```json
+[
+  {
+    "path": "/api/users/login/",
+    "method": "POST",
+    "auth_required": false,
+    "roles_allowed": ["Any"],
+    "description": "Authentifie un utilisateur et retourne les tokens JWT (access & refresh)."
+  },
+  {
+    "path": "/api/users/refresh/",
+    "method": "POST",
+    "auth_required": false,
+    "roles_allowed": ["Any"],
+    "description": "Rafraîchit le token d'accès JWT expiré."
+  },
+  {
+    "path": "/api/users/endpoints/",
+    "method": "GET",
+    "auth_required": false,
+    "roles_allowed": ["Any"],
+    "description": "Liste l'ensemble des endpoints disponibles avec leurs descriptions et permissions."
+  }
+]
+```

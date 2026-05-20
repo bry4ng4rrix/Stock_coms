@@ -436,3 +436,113 @@ class DashboardView(APIView):
 
         else:
             return Response({"error": "Role not supported"}, status=403)
+
+
+# =========================
+# API ENDPOINTS LIST VIEW
+# =========================
+class ApiEndpointsListView(APIView):
+    permission_classes = []  # Publicly accessible endpoint exploration
+
+    def get(self, request):
+        endpoints = [
+            {
+                "path": "/api/users/login/",
+                "method": "POST",
+                "auth_required": False,
+                "roles_allowed": ["Any"],
+                "description": "Authentifie un utilisateur et retourne les tokens JWT (access & refresh)."
+            },
+            {
+                "path": "/api/users/refresh/",
+                "method": "POST",
+                "auth_required": False,
+                "roles_allowed": ["Any"],
+                "description": "Rafraîchit le token d'accès JWT expiré."
+            },
+            {
+                "path": "/api/users/register/",
+                "method": "POST",
+                "auth_required": False,
+                "roles_allowed": ["Any"],
+                "description": "Inscrit un nouvel utilisateur (admin créé automatiquement, magasin/employé en attente)."
+            },
+            {
+                "path": "/api/users/me/",
+                "method": "GET",
+                "auth_required": True,
+                "roles_allowed": ["admin", "magasin", "employer"],
+                "description": "Retourne le profil complet et les informations de l'utilisateur connecté."
+            },
+            {
+                "path": "/api/users/approve/<user_id>/",
+                "method": "PUT",
+                "auth_required": True,
+                "roles_allowed": ["admin", "magasin"],
+                "description": "Approuve et active un compte utilisateur en attente de validation."
+            },
+            {
+                "path": "/api/users/role/<user_id>/",
+                "method": "PUT",
+                "auth_required": True,
+                "roles_allowed": ["admin"],
+                "description": "Modifie le rôle d'un utilisateur existant."
+            },
+            {
+                "path": "/api/users/products/",
+                "method": "GET, POST",
+                "auth_required": True,
+                "roles_allowed": ["admin", "magasin", "employer"],
+                "description": "GET: Liste les produits (prix d'achat masqué pour magasin/employé). POST: Crée un nouveau produit."
+            },
+            {
+                "path": "/api/users/products/<id>/",
+                "method": "GET, PUT, PATCH, DELETE",
+                "auth_required": True,
+                "roles_allowed": ["admin", "magasin", "employer"],
+                "description": "Consulte, modifie ou supprime un produit spécifique (Modifications/Suppression réservées aux admins)."
+            },
+            {
+                "path": "/api/users/sales/",
+                "method": "GET, POST",
+                "auth_required": True,
+                "roles_allowed": ["admin", "magasin", "employer"],
+                "description": "GET: Historique des ventes de produits (filtré par magasin). POST: Enregistre une nouvelle transaction de vente."
+            },
+            {
+                "path": "/api/users/sales/totals/",
+                "method": "GET",
+                "auth_required": True,
+                "roles_allowed": ["admin", "magasin", "employer"],
+                "description": "Calcule la somme globale des unit_price et shell_price de tous les produits."
+            },
+            {
+                "path": "/api/users/sales/profit/",
+                "method": "GET",
+                "auth_required": True,
+                "roles_allowed": ["admin", "magasin", "employer"],
+                "description": "Calcule le bénéfice réel total (somme de (sale_price - unit_price) * quantity)."
+            },
+            {
+                "path": "/api/users/magasins/users/",
+                "method": "GET",
+                "auth_required": True,
+                "roles_allowed": ["admin", "magasin", "employer"],
+                "description": "Retourne la liste de tous les utilisateurs (managers et employés) regroupés par magasin."
+            },
+            {
+                "path": "/api/users/dashboard/",
+                "method": "GET",
+                "auth_required": True,
+                "roles_allowed": ["admin", "magasin", "employer"],
+                "description": "Tableau de bord analytique dynamique adapté en temps réel au profil de l'utilisateur."
+            },
+            {
+                "path": "/api/users/endpoints/",
+                "method": "GET",
+                "auth_required": False,
+                "roles_allowed": ["Any"],
+                "description": "Liste l'ensemble des endpoints disponibles avec leurs descriptions et permissions."
+            }
+        ]
+        return Response(endpoints)

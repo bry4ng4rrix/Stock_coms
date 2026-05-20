@@ -207,6 +207,11 @@ Base URL: `/api/users/`
   - **Magasin**: Returns store-specific sales counts, total stock value, store profits, top sellers, and low stock warnings (sensitive company-wide variables are hidden).
   - **Employer**: Returns employee-specific daily count, total amount sold, quantity sold, and their recent sales list.
 
+### GET `/api/users/endpoints/`
+- **Description**: Publicly accessible API discovery endpoint that lists all available endpoints, their HTTP methods, whether they require authentication, their target role clearances, and human-friendly descriptions.
+- **Auth**: None required
+- **Response**: List of all API routes and their specifications.
+
 ## Admin
 
 ### GET `/admin/`
