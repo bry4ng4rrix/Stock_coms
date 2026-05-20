@@ -20,6 +20,7 @@ import {
   Store,
   QrCode,
   MessageCircle,
+  ShoppingCart,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -37,9 +38,15 @@ const navigationItems = [
     icon: Shirt,
   },
   {
+    label: 'Ventes',
+    href: '/sales',
+    icon: ShoppingCart,
+  },
+  {
     label: 'Mouvements',
     href: '/movements',
     icon: TrendingUp,
+    adminOnly: true,
   },
   {
     label: 'Alertes',
@@ -87,6 +94,11 @@ const navigationItems = [
     href: '/superadmin',
     icon: Shield,
     superAdminOnly: true,
+  },
+  {
+    label: 'Scanner',
+    href: '/scanner',
+    icon: QrCode,
   },
   {
     label: 'Paramètres',

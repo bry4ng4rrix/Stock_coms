@@ -1,15 +1,20 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { createClient } from '@/utils/supabase/client';
+import { djangoClient } from '@/lib/django-client';
 
 export interface CurrentUser {
-  id: string;
+  id: number;
   email: string;
-  role: string;
+  role: 'admin' | 'magasin' | 'employer';
   full_name: string;
-  status: string;
-  store_id: string | null;
+  is_confirmed: boolean;
+  phone?: string;
+  company_name?: string;
+  shop_name?: string;
+  magasin_id?: number;
+  position?: string;
+  store_id?: number | null;
   store_name?: string | null;
   store_logo?: string | null;
 }
@@ -17,39 +22,30 @@ export interface CurrentUser {
 export function useCurrentUser() {
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [loading, setLoading] = useState(true);
-  const supabase = createClient();
 
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        const { data: { user: authUser } } = await supabase.auth.getUser();
-        if (!authUser) {
+        if (!djangoClient.isAuthenticated()) {
           setUser(null);
           setLoading(false);
           return;
         }
-
-        const { data: profile } = await supabase
-          .from('users')
-          .select('role, full_name, status, store_id, stores(name, logo_url)')
-          .eq('id', authUser.id)
-          .maybeSingle();
-
-        const storeData = (profile as any)?.stores;
-
-        // Fallback to auth metadata if profile row missing or role not set
-        const meta = authUser.user_metadata ?? {};
-        const resolvedRole = profile?.role || meta.role || 'employer';
-
+        const data = await djangoClient.get<any>('/users/me/');
         setUser({
-          id: authUser.id,
-          email: authUser.email || '',
-          role: resolvedRole,
-          full_name: profile?.full_name || meta.full_name || '',
-          status: profile?.status || meta.status || 'pending',
-          store_id: profile?.store_id || null,
-          store_name: storeData?.name || null,
-          store_logo: storeData?.logo_url || null,
+          id: data.id,
+          email: data.email,
+          role: data.role,
+          full_name: data.full_name || data.username || '',
+          is_confirmed: data.is_confirmed,
+          phone: data.phone || undefined,
+          company_name: data.company_name || undefined,
+          shop_name: data.shop_name || undefined,
+          magasin_id: data.magasin_id || undefined,
+          position: data.position || undefined,
+          store_id: data.magasin_id ?? null,
+          store_name: data.shop_name ?? null,
+          store_logo: null,
         });
       } catch (err) {
         console.error('Error fetching current user:', err);
@@ -60,14 +56,17 @@ export function useCurrentUser() {
     };
 
     fetchUser();
-  }, [supabase]);
+  }, []);
 
-  return { 
-    user, 
-    loading, 
-    isAdmin: user?.role?.toLowerCase() === 'admin',
-    isSuperAdmin: user?.role?.toLowerCase() === 'superadmin',
-    isAdminOrSuperAdmin: user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'superadmin',
-    isManager: user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'magasinier'
+  const role = user?.role;
+  return {
+    user,
+    loading,
+    isAdmin: role === 'admin',
+    isMagasin: role === 'magasin',
+    isEmployer: role === 'employer',
+    isSuperAdmin: role === 'admin',
+    isAdminOrSuperAdmin: role === 'admin' || role === 'magasin',
+    isManager: role === 'admin' || role === 'magasin',
   };
 }

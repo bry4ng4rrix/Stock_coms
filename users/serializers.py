@@ -86,12 +86,14 @@ class ProductSerializer(serializers.ModelSerializer):
 class SaleSerializer(serializers.ModelSerializer):
     seller_name = serializers.CharField(source="seller.full_name", read_only=True)
     shop_name = serializers.CharField(source="magasin.shop_name", read_only=True)
+    product_name = serializers.CharField(source="product.name", read_only=True)
 
     class Meta:
         model = Sale
         fields = [
             "id",
             "product",
+            "product_name",
             "magasin",
             "shop_name",
             "seller",

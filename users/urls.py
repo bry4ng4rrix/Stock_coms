@@ -13,6 +13,10 @@ from .views import (
     UsersByMagasinView,
     DashboardView,
     ApiEndpointsListView,
+    PendingUsersView,
+    DeleteUserView,
+    RejectUserView,
+    ChangePasswordView,
 )
 
 from rest_framework_simplejwt.views import TokenRefreshView
@@ -47,6 +51,13 @@ urlpatterns = [
     path("magasins/users/", UsersByMagasinView.as_view()),
     # Dashboard stats
     path("dashboard/", DashboardView.as_view()),
+    # Pending users (awaiting approval)
+    path("change-password/", ChangePasswordView.as_view()),
+    path("pending/", PendingUsersView.as_view()),
+    # Delete user
+    path("delete/<int:user_id>/", DeleteUserView.as_view()),
+    # Reject user
+    path("reject/<int:user_id>/", RejectUserView.as_view()),
     # Explore endpoints
     path("endpoints/", ApiEndpointsListView.as_view()),
 ] + router.urls

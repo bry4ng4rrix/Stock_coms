@@ -300,7 +300,7 @@ export default function DashboardPage() {
               <ResponsiveContainer width="100%" height={260}>
                 <LineChart data={weeklyTrend}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
+                  <XAxis dataKey="label" />
                   <YAxis />
                   <Tooltip />
                   <Legend />

@@ -12,12 +12,14 @@ import { Loader2, Mail, Lock, Eye, EyeOff } from 'lucide-react';
 
 const ERRORS: Record<string, string> = {
   'Invalid login credentials':    'Email ou mot de passe incorrect.',
+  'No active account found':      'Email ou mot de passe incorrect.',
   'Email not confirmed':          'Compte non confirmé. Contactez l\'administrateur.',
+  'Compte non approuvé':          'Compte en attente d\'approbation. Contactez votre administrateur.',
   'User not found':               'Aucun compte avec cet email.',
   'Too many requests':            'Trop de tentatives. Attendez quelques minutes.',
   'Account pending approval':     'Compte en attente d\'approbation. Contactez votre manager.',
   'Account rejected':             'Compte rejeté. Contactez votre manager.',
-  'Password reset email sent':    'Email de réinitialisation envoyé ! Vérifiez votre boîte mail.',
+  'Authentication failed':        'Email ou mot de passe incorrect.',
 };
 
 function friendlyError(msg: string) {
@@ -42,8 +44,7 @@ export function LoginForm() {
     try {
       const response = await djangoClient.auth.login(email, password);
 
-      // Check user approval status
-      if (!response.user.is_approved) {
+      if (!response.user.is_confirmed) {
         toast.error(ERRORS['Account pending approval']);
         setLoading(false);
         return;
@@ -51,7 +52,6 @@ export function LoginForm() {
 
       toast.success('Connexion réussie !');
       router.push('/dashboard');
-      router.refresh();
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Erreur de connexion';
       toast.error(friendlyError(errorMsg));

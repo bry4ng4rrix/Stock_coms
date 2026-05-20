@@ -7,7 +7,7 @@ from django.db.models.functions import Coalesce
 from django.utils import timezone
 from datetime import timedelta
 
-from .models import CustomUser, Product, MagasinProfile, Sale, EmployerProfile
+from .models import CustomUser, Product, MagasinProfile, Sale, EmployerProfile, AdminProfile
 from .serializers import RegisterSerializer, ProductSerializer, SaleSerializer
 from .permissions import IsAdmin
 from rest_framework_simplejwt.views import TokenViewBase
@@ -52,15 +52,52 @@ class ApproveUserView(APIView):
 # =========================
 class Myprofile(APIView):
     permission_classes = [IsAuthenticated]
+
     def get(self, request):
         user = request.user
-        return Response({
+        data = {
             "id": user.id,
             "username": user.username,
             "email": user.email,
+            "full_name": user.full_name,
+            "phone": user.phone,
             "role": user.role,
             "is_confirmed": user.is_confirmed,
-        })
+        }
+        if user.role == "admin":
+            try:
+                p = user.admin_profile
+                data["company_name"] = p.company_name
+            except AdminProfile.DoesNotExist:
+                pass
+        elif user.role == "magasin":
+            try:
+                p = user.magasin_profile
+                data["shop_name"] = p.shop_name
+                data["magasin_id"] = p.id
+            except Exception:
+                pass
+        elif user.role == "employer":
+            try:
+                p = user.employer_profile
+                data["position"] = p.position
+                if p.magasin:
+                    data["magasin_id"] = p.magasin.id
+                    data["shop_name"] = p.magasin.shop_name
+            except Exception:
+                pass
+        return Response(data)
+
+    def patch(self, request):
+        user = request.user
+        full_name = request.data.get("full_name")
+        phone = request.data.get("phone")
+        if full_name:
+            user.full_name = full_name
+        if phone is not None:
+            user.phone = phone
+        user.save()
+        return Response({"message": "Profil mis à jour"})
 
 # =========================
 # ROLE MANAGEMENT
@@ -161,7 +198,17 @@ class ProductViewSet(viewsets.ModelViewSet):
             magasin = MagasinProfile.objects.get(user=user)
         elif user.role == "admin":
             magasin_id = self.request.data.get("magasin")
-            magasin = MagasinProfile.objects.get(id=magasin_id)
+            if magasin_id:
+                try:
+                    magasin = MagasinProfile.objects.get(id=magasin_id)
+                except MagasinProfile.DoesNotExist:
+                    pass
+        elif user.role == "employer":
+            try:
+                employer = EmployerProfile.objects.get(user=user)
+                magasin = employer.magasin
+            except EmployerProfile.DoesNotExist:
+                pass
         serializer.save(magasin=magasin)
     def update(self, request, *args, **kwargs):
         if request.user.role != "admin":
@@ -546,3 +593,109 @@ class ApiEndpointsListView(APIView):
             }
         ]
         return Response(endpoints)
+
+
+# =========================
+# CHANGE PASSWORD VIEW
+# =========================
+class ChangePasswordView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        old_password = request.data.get("old_password")
+        new_password = request.data.get("new_password")
+        if not old_password or not new_password:
+            return Response({"detail": "Champs requis manquants"}, status=400)
+        if not user.check_password(old_password):
+            return Response({"detail": "Mot de passe actuel incorrect"}, status=400)
+        if len(new_password) < 6:
+            return Response({"detail": "Le mot de passe doit contenir au moins 6 caractères"}, status=400)
+        user.set_password(new_password)
+        user.save()
+        return Response({"message": "Mot de passe changé avec succès"})
+
+
+# =========================
+# PENDING USERS VIEW
+# =========================
+class PendingUsersView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        if user.role not in ["admin", "magasin"]:
+            return Response({"error": "Permission refusée"}, status=403)
+
+        if user.role == "admin":
+            pending_qs = CustomUser.objects.filter(is_confirmed=False)
+        else:
+            try:
+                magasin = MagasinProfile.objects.get(user=user)
+                employer_ids = EmployerProfile.objects.filter(magasin=magasin).values_list("user_id", flat=True)
+                pending_qs = CustomUser.objects.filter(is_confirmed=False, id__in=employer_ids)
+            except MagasinProfile.DoesNotExist:
+                return Response({"error": "Magasin introuvable"}, status=404)
+
+        data = []
+        for u in pending_qs:
+            item = {
+                "id": u.id,
+                "full_name": u.full_name,
+                "email": u.email,
+                "role": u.role,
+                "created_at": u.created_at,
+            }
+            if u.role == "employer":
+                try:
+                    ep = u.employer_profile
+                    item["position"] = ep.position
+                    if ep.magasin:
+                        item["shop_name"] = ep.magasin.shop_name
+                except Exception:
+                    pass
+            elif u.role == "magasin":
+                try:
+                    mp = u.magasin_profile
+                    item["shop_name"] = mp.shop_name
+                except Exception:
+                    pass
+            data.append(item)
+
+        return Response(data)
+
+
+# =========================
+# DELETE USER VIEW
+# =========================
+class DeleteUserView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, user_id):
+        if request.user.role not in ["admin", "magasin"]:
+            return Response({"error": "Permission refusée"}, status=403)
+        try:
+            user = CustomUser.objects.get(id=user_id)
+            if user.id == request.user.id:
+                return Response({"error": "Vous ne pouvez pas vous supprimer vous-même"}, status=400)
+            user.delete()
+            return Response({"message": "Utilisateur supprimé"})
+        except CustomUser.DoesNotExist:
+            return Response({"error": "Utilisateur introuvable"}, status=404)
+
+
+# =========================
+# REJECT USER VIEW
+# =========================
+class RejectUserView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, user_id):
+        if request.user.role not in ["admin", "magasin"]:
+            return Response({"error": "Permission refusée"}, status=403)
+        try:
+            user = CustomUser.objects.get(id=user_id)
+            user.delete()
+            return Response({"message": "Utilisateur rejeté et supprimé"})
+        except CustomUser.DoesNotExist:
+            return Response({"error": "Utilisateur introuvable"}, status=404)

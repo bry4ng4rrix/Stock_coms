@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { createClient } from '@/utils/supabase/client';
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,51 +13,47 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Moon, Sun, LogOut } from 'lucide-react';
+import { Moon, Sun, LogOut, User } from 'lucide-react';
 import { useTheme } from 'next-themes';
-import { useRouter } from 'next/navigation';
-import { Notifications } from '@/components/notifications';
+import { useCurrentUser } from '@/lib/auth/useCurrentUser';
+import { djangoClient } from '@/lib/django-client';
 
 export function TopBar() {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
-  const [user, setUser] = useState<any>(null);
+  const { user } = useCurrentUser();
   const [mounted, setMounted] = useState(false);
-  const supabase = createClient();
 
-  useEffect(() => {
+  // avoid hydration mismatch on theme icon
+  if (typeof window !== 'undefined' && !mounted) {
     setMounted(true);
-  }, []);
+  }
 
-  useEffect(() => {
-    const getUser = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      setUser(user);
-    };
-    getUser();
-  }, [supabase]);
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
+  const handleLogout = () => {
+    djangoClient.auth.logout();
     router.push('/login');
-    router.refresh();
   };
 
-  const initials = user?.user_metadata?.full_name
+  const initials = user?.full_name
     ?.split(' ')
-    .map((n: string) => n[0])
+    .filter(Boolean)
+    .map((n) => n[0])
     .join('')
-    .toUpperCase() || 'U';
+    .toUpperCase()
+    .slice(0, 2) || 'U';
+
+  const roleLabel: Record<string, string> = {
+    admin: 'Administrateur',
+    magasin: 'Gérant de magasin',
+    employer: 'Commercial',
+  };
 
   return (
     <div className="border-b bg-background sticky top-0 z-10">
       <div className="flex items-center justify-between h-16 px-6">
         <div className="flex-1" />
 
-        <div className="flex items-center gap-4">
-          <Notifications />
+        <div className="flex items-center gap-3">
           {/* Theme toggle */}
           <Button
             variant="ghost"
@@ -75,24 +72,35 @@ export function TopBar() {
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="relative h-8 w-8 rounded-full">
                 <Avatar className="h-8 w-8">
-                  <AvatarImage src="" />
-                  <AvatarFallback className="bg-blue-600 text-white">
+                  <AvatarFallback className="bg-blue-600 text-white text-xs font-semibold">
                     {initials}
                   </AvatarFallback>
                 </Avatar>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuLabel>
-                <div className="text-sm font-medium">
-                  {user?.user_metadata?.full_name || 'Utilisateur'}
+                <div className="text-sm font-medium truncate">
+                  {user?.full_name || 'Utilisateur'}
                 </div>
-                <div className="text-xs text-muted-foreground">
+                <div className="text-xs text-muted-foreground truncate">
                   {user?.email}
                 </div>
+                {user?.role && (
+                  <div className="text-xs text-blue-600 font-medium mt-0.5">
+                    {roleLabel[user.role] || user.role}
+                  </div>
+                )}
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleLogout}>
+              <DropdownMenuItem asChild>
+                <Link href="/settings" className="cursor-pointer">
+                  <User className="mr-2 h-4 w-4" />
+                  Mon profil
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleLogout} className="text-red-600 focus:text-red-600">
                 <LogOut className="mr-2 h-4 w-4" />
                 Déconnexion
               </DropdownMenuItem>

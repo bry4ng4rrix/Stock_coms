@@ -15,11 +15,14 @@ interface AuthResponse {
     id: number
     email: string
     username: string
-    first_name: string
-    last_name: string
-    role: 'admin' | 'store_manager' | 'employee'
-    is_approved: boolean
+    full_name: string
+    role: 'admin' | 'magasin' | 'employer'
+    is_confirmed: boolean
     store_id?: number
+    magasin_id?: number
+    shop_name?: string
+    company_name?: string
+    position?: string
   }
 }
 
@@ -82,7 +85,7 @@ class DjangoAPIClient {
 
       if (!response.ok) {
         this.clearTokensFromStorage()
-        window.location.href = '/users/login'
+        window.location.href = '/login'
         return null
       }
 
@@ -125,7 +128,10 @@ class DjangoAPIClient {
 
     if (response.status === 401) {
       const newToken = await this.refreshAccessToken()
-      if (!newToken) throw new Error('Authentication failed')
+      if (!newToken) {
+        const error = await response.json().catch(() => ({})) as ApiErrorResponse
+        throw new Error(error.detail || 'Authentication failed')
+      }
 
       response = await fetch(url, {
         ...options,
@@ -135,7 +141,11 @@ class DjangoAPIClient {
 
     if (!response.ok) {
       const error = (await response.json()) as ApiErrorResponse
-      throw new Error(error.detail || `API Error: ${response.status}`)
+      const message = error.detail
+        || (Array.isArray(error.non_field_errors) ? error.non_field_errors[0] : null)
+        || Object.entries(error).map(([k, v]) => `${k}: ${Array.isArray(v) ? v[0] : v}`).join(' | ')
+        || `API Error: ${response.status}`
+      throw new Error(message)
     }
 
     return response.json()
@@ -170,6 +180,49 @@ class DjangoAPIClient {
     return this.request<T>(endpoint, { method: 'DELETE' })
   }
 
+  // ==================== FormData Methods (for file uploads) ====================
+  private async requestFormData<T>(
+    endpoint: string,
+    method: string,
+    data: FormData,
+  ): Promise<T> {
+    const url = `${API_BASE_URL}${endpoint}`
+    const headers: Record<string, string> = {}
+    if (this.tokens?.access) {
+      headers['Authorization'] = `Bearer ${this.tokens.access}`
+    }
+
+    let response = await fetch(url, { method, headers, body: data })
+
+    if (response.status === 401) {
+      const newToken = await this.refreshAccessToken()
+      if (!newToken) throw new Error('Authentication failed')
+      headers['Authorization'] = `Bearer ${newToken}`
+      response = await fetch(url, { method, headers, body: data })
+    }
+
+    if (!response.ok) {
+      let errorMsg = `API Error: ${response.status}`
+      try {
+        const error = await response.json()
+        const messages = Object.entries(error)
+          .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
+        errorMsg = messages.join(' | ') || errorMsg
+      } catch {}
+      throw new Error(errorMsg)
+    }
+
+    return response.json()
+  }
+
+  async postFormData<T>(endpoint: string, data: FormData): Promise<T> {
+    return this.requestFormData<T>(endpoint, 'POST', data)
+  }
+
+  async patchFormData<T>(endpoint: string, data: FormData): Promise<T> {
+    return this.requestFormData<T>(endpoint, 'PATCH', data)
+  }
+
   // ==================== Authentication Service ====================
   auth = {
     register: async (
@@ -200,15 +253,12 @@ class DjangoAPIClient {
     },
 
     login: async (email: string, password: string) => {
-      // Backend SimpleJWT expects 'username' and 'password'
       const response = await this.post<{ access: string; refresh: string }>('/users/login/', {
-        username: email,
+        email: email,
         password,
       })
       this.saveTokensToStorage({ access: response.access, refresh: response.refresh })
-      
-      // Fetch complete user profile immediately
-      const user = await this.getCurrentUser()
+      const user = await this.auth.getCurrentUser()
       
       return {
         access: response.access,
@@ -223,7 +273,6 @@ class DjangoAPIClient {
 
     getCurrentUser: async () => {
       const response = await this.get<any>('/users/me/')
-      // Map role from backend value if necessary
       let mappedRole: 'admin' | 'store_manager' | 'employee' = 'employee'
       if (response.role === 'admin') mappedRole = 'admin'
       else if (response.role === 'magasin') mappedRole = 'store_manager'
@@ -233,10 +282,18 @@ class DjangoAPIClient {
         id: response.id,
         email: response.email,
         username: response.username,
+        full_name: response.full_name || '',
         first_name: response.full_name?.split(' ')[0] || '',
         last_name: response.full_name?.split(' ').slice(1).join(' ') || '',
+        phone: response.phone,
         role: mappedRole,
+        raw_role: response.role,
         is_approved: response.is_confirmed,
+        is_confirmed: response.is_confirmed,
+        company_name: response.company_name,
+        shop_name: response.shop_name,
+        magasin_id: response.magasin_id,
+        position: response.position,
       } as any
     },
 
@@ -245,12 +302,11 @@ class DjangoAPIClient {
     },
 
     rejectUser: async (userId: number) => {
-      // Fallback stub: backend doesn't have a direct reject endpoint, but can delete/reject if needed
       return this.post(`/users/reject/${userId}/`)
     },
 
     getPendingUsers: async () => {
-      return this.get<any[]>('/users/pending-users/')
+      return this.get<any[]>('/users/pending/')
     },
   }
 
@@ -342,7 +398,6 @@ class DjangoAPIClient {
     },
 
     delete: async (id: number) => {
-      // backend standard user deletion via standard views
       return this.delete(`/users/delete/${id}/`)
     },
 

@@ -1,344 +1,139 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
-import { createClient } from '@/utils/supabase/client';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useEffect, useState, useRef, useCallback } from 'react';
+import { djangoClient } from '@/lib/django-client';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Barcode, QrCode, Camera } from 'lucide-react';
+import { QrCode, Search, Package } from 'lucide-react';
 import { toast } from 'sonner';
-import JsBarcode from 'jsbarcode';
-import { QRCodeCanvas } from 'qrcode.react';
+
+const MEDIA_BASE = (process.env.NEXT_PUBLIC_DJANGO_API_URL || 'http://localhost:8000/api')
+  .replace('/api', '');
 
 export default function ScannerPage() {
-  const [products, setProducts] = useState<any[]>([]);
-  const [scannedSKU, setScannedSKU] = useState('');
-  const [selectedProduct, setSelectedProduct] = useState<any>(null);
-  const [quantity, setQuantity] = useState('1');
-  const barcodeRef = useRef(null);
-  const qrRef = useRef(null);
-  const supabase = createClient();
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const search = useCallback(async (q: string) => {
+    if (!q.trim()) { setResults([]); return; }
+    setLoading(true);
+    try {
+      const data = await djangoClient.products.search(q);
+      setResults(data);
+    } catch (err: any) {
+      toast.error(err.message || 'Erreur de recherche');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    const fetchProducts = async () => {
-      try {
-        const { data } = await supabase
-          .from('products')
-          .select('*, product_sizes(size, quantity)')
-          .order('name');
+    const timer = setTimeout(() => search(query), 350);
+    return () => clearTimeout(timer);
+  }, [query, search]);
 
-        if (data) setProducts(data);
-      } catch (err) {
-        console.error('Error fetching products:', err);
-      }
-    };
+  useEffect(() => { inputRef.current?.focus(); }, []);
 
-    fetchProducts();
-  }, [supabase]);
-
-  useEffect(() => {
-    if (scannedSKU) {
-      const product = products.find((p) => p.sku === scannedSKU);
-      if (product) {
-        setSelectedProduct(product);
-      } else {
-        toast.error('Produit non trouvé');
-        setScannedSKU('');
-      }
-    }
-  }, [scannedSKU, products]);
-
-  useEffect(() => {
-    if (selectedProduct && barcodeRef.current) {
-      try {
-        JsBarcode(barcodeRef.current, selectedProduct.sku, {
-          format: 'CODE128',
-          width: 2,
-          height: 100,
-        });
-      } catch (err) {
-        console.error('Error generating barcode:', err);
-      }
-    }
-  }, [selectedProduct]);
-
-  const handleScan = () => {
-    if (!selectedProduct || !quantity) {
-      toast.error('Veuillez sélectionner un produit');
-      return;
-    }
-
-    toast.success(`Scannage enregistré: ${selectedProduct.name} x ${quantity}`);
-    setScannedSKU('');
-    setSelectedProduct(null);
-    setQuantity('1');
+  const stockStatus = (p: any) => {
+    if (p.initial_quantity === 0) return { label: 'Rupture', class: 'bg-red-100 text-red-800' };
+    if (p.initial_quantity <= p.alert_threshold) return { label: 'Faible', class: 'bg-orange-100 text-orange-800' };
+    return { label: 'En stock', class: 'bg-green-100 text-green-800' };
   };
 
   return (
     <div className="p-6 space-y-6">
-      {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Module Scanner</h1>
-        <p className="text-muted-foreground mt-1">Scannez les code-barres et QR codes de vos produits</p>
+        <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
+          <QrCode className="h-8 w-8 text-blue-600" />Scanner / Recherche
+        </h1>
+        <p className="text-muted-foreground mt-1">Recherchez un produit par nom, référence ou catégorie</p>
       </div>
 
-      <Tabs defaultValue="scan" className="space-y-6">
-        <TabsList>
-          <TabsTrigger value="scan">
-            <Camera className="h-4 w-4 mr-2" />
-            Scanner
-          </TabsTrigger>
-          <TabsTrigger value="barcode">
-            <Barcode className="h-4 w-4 mr-2" />
-            Codes-barres
-          </TabsTrigger>
-          <TabsTrigger value="qrcode">
-            <QrCode className="h-4 w-4 mr-2" />
-            QR Codes
-          </TabsTrigger>
-        </TabsList>
+      {/* Search bar */}
+      <div className="relative max-w-xl">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          ref={inputRef}
+          placeholder="Nom, référence, catégorie..."
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          className="pl-10"
+        />
+      </div>
 
-        {/* Scanner Tab */}
-        <TabsContent value="scan" className="space-y-6">
+      {/* Results */}
+      {query && (
+        loading ? (
+          <p className="text-muted-foreground text-sm">Recherche...</p>
+        ) : results.length === 0 ? (
           <Card>
-            <CardHeader>
-              <CardTitle>Interface de scan</CardTitle>
-              <CardDescription>
-                Entrez le SKU d&apos;un produit ou scannez directement avec un lecteur code-barres
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {/* Camera placeholder */}
-              <div className="bg-slate-900 rounded-lg h-96 flex items-center justify-center">
-                <div className="text-center">
-                  <Camera className="h-16 w-16 mx-auto text-slate-600 mb-4" />
-                  <p className="text-slate-300">Webcam - Cliquez pour activer</p>
-                </div>
-              </div>
-
-              {/* Manual input */}
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="sku">Code SKU / Code-barres</Label>
-                  <Input
-                    id="sku"
-                    value={scannedSKU}
-                    onChange={(e) => setScannedSKU(e.target.value)}
-                    placeholder="Scannez ou entrez le SKU..."
-                    autoFocus
-                  />
-                </div>
-
-                {selectedProduct && (
-                  <>
-                    <div className="border rounded-lg p-4 bg-slate-50 dark:bg-slate-900">
-                      <div className="space-y-3">
-                        <div>
-                          <p className="text-sm text-muted-foreground">Produit sélectionné</p>
-                          <p className="text-lg font-bold">{selectedProduct.name}</p>
-                          <p className="text-sm text-muted-foreground mt-1">SKU: {selectedProduct.sku}</p>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <p className="text-sm text-muted-foreground">Stock actuel</p>
-                            <p className="text-2xl font-bold">
-                              {selectedProduct.product_sizes?.reduce((s: number, ps: any) => s + (ps.quantity || 0), 0) || 0}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-sm text-muted-foreground">Prix unitaire</p>
-                            <p className="text-2xl font-bold">Ar {selectedProduct.unit_price.toFixed(2)}</p>
-                          </div>
-                        </div>
-                        <div>
-                          <Badge className={
-                            selectedProduct.status === 'in_stock'
-                              ? 'bg-green-100 text-green-800'
-                              : selectedProduct.status === 'low'
-                              ? 'bg-orange-100 text-orange-800'
-                              : 'bg-red-100 text-red-800'
-                          }>
-                            {selectedProduct.status === 'in_stock'
-                              ? 'En stock'
-                              : selectedProduct.status === 'low'
-                              ? 'Faible'
-                              : 'Rupture'}
-                          </Badge>
-                        </div>
+            <CardContent className="flex flex-col items-center py-12 text-muted-foreground gap-2">
+              <Package className="h-10 w-10" />
+              <p>Aucun produit trouvé pour « {query} »</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {results.map((p) => {
+              const status = stockStatus(p);
+              return (
+                <Card key={p.id} className="hover:shadow-md transition-shadow">
+                  <CardHeader className="pb-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <CardTitle className="text-base">{p.name}</CardTitle>
+                      <Badge className={status.class}>{status.label}</Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground font-mono">{p.reference}</p>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {p.image1 && (
+                      <img
+                        src={p.image1.startsWith('http') ? p.image1 : `${MEDIA_BASE}${p.image1}`}
+                        alt={p.name}
+                        className="w-full h-32 object-cover rounded-md"
+                      />
+                    )}
+                    <div className="grid grid-cols-2 gap-1 text-sm">
+                      <div>
+                        <p className="text-muted-foreground text-xs">Catégorie</p>
+                        <p className="font-medium">{p.category || '-'}</p>
                       </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="quantity">Quantité à enregistrer</Label>
-                      <Input
-                        id="quantity"
-                        type="number"
-                        min="1"
-                        value={quantity}
-                        onChange={(e) => setQuantity(e.target.value)}
-                      />
-                    </div>
-
-                    <div className="flex gap-2">
-                      <Button className="flex-1" onClick={handleScan}>
-                        Confirmer le scan
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          setScannedSKU('');
-                          setSelectedProduct(null);
-                        }}
-                      >
-                        Annuler
-                      </Button>
-                    </div>
-                  </>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Barcode Tab */}
-        <TabsContent value="barcode" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Générateur de codes-barres</CardTitle>
-              <CardDescription>
-                Générez et imprimez les codes-barres de vos produits
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {products.slice(0, 6).map((product) => (
-                  <div
-                    key={product.id}
-                    className="border rounded-lg p-4 flex flex-col items-center space-y-4"
-                  >
-                    <svg ref={barcodeRef}></svg>
-                    <div className="text-center">
-                      <p className="font-medium">{product.name}</p>
-                      <p className="text-sm text-muted-foreground">{product.sku}</p>
-                    </div>
-                    <Dialog>
-                      <DialogTrigger asChild>
-                        <Button variant="outline" size="sm" onClick={() => setSelectedProduct(product)}>
-                          Détails
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent>
-                        <DialogHeader>
-                          <DialogTitle>{product.name}</DialogTitle>
-                        </DialogHeader>
-                        <div className="space-y-4">
-                          <div className="bg-white p-4 rounded flex justify-center">
-                            <svg ref={barcodeRef}></svg>
-                          </div>
-                          <div className="grid grid-cols-2 gap-4">
-                            <div>
-                              <p className="text-sm text-muted-foreground">SKU</p>
-                              <p className="font-medium">{product.sku}</p>
-                            </div>
-                            <div>
-                              <p className="text-sm text-muted-foreground">Stock</p>
-                              <p className="font-medium">{product.quantity}</p>
-                            </div>
-                          </div>
-                          <Button className="w-full" variant="outline">
-                            Imprimer
-                          </Button>
+                      <div>
+                        <p className="text-muted-foreground text-xs">Quantité</p>
+                        <p className="font-semibold">{p.initial_quantity} u.</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground text-xs">Prix vente</p>
+                        <p className="font-medium">{new Intl.NumberFormat('fr-MG').format(p.shell_price)} Ar</p>
+                      </div>
+                      {p.expiry_date && (
+                        <div>
+                          <p className="text-muted-foreground text-xs">Expiration</p>
+                          <p className="font-medium">{new Date(p.expiry_date).toLocaleDateString('fr-FR')}</p>
                         </div>
-                      </DialogContent>
-                    </Dialog>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )
+      )}
 
-        {/* QR Code Tab */}
-        <TabsContent value="qrcode" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Générateur de QR codes</CardTitle>
-              <CardDescription>
-                Générez et imprimez les QR codes de vos produits
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {products.slice(0, 6).map((product) => (
-                  <div
-                    key={product.id}
-                    className="border rounded-lg p-4 flex flex-col items-center space-y-4"
-                  >
-                    <div className="bg-white p-2 rounded">
-                      <QRCodeCanvas
-                        value={product.sku}
-                        size={128}
-                        level="H"
-                        includeMargin={true}
-                      />
-                    </div>
-                    <div className="text-center">
-                      <p className="font-medium">{product.name}</p>
-                      <p className="text-sm text-muted-foreground">{product.sku}</p>
-                    </div>
-                    <Dialog>
-                      <DialogTrigger asChild>
-                        <Button variant="outline" size="sm">
-                          Détails
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent>
-                        <DialogHeader>
-                          <DialogTitle>{product.name}</DialogTitle>
-                        </DialogHeader>
-                        <div className="space-y-4">
-                          <div className="bg-white p-4 rounded flex justify-center">
-                            <QRCodeCanvas
-                              value={product.sku}
-                              size={256}
-                              level="H"
-                              includeMargin={true}
-                            />
-                          </div>
-                          <div className="grid grid-cols-2 gap-4">
-                            <div>
-                              <p className="text-sm text-muted-foreground">SKU</p>
-                              <p className="font-medium">{product.sku}</p>
-                            </div>
-                            <div>
-                              <p className="text-sm text-muted-foreground">Stock</p>
-                              <p className="font-medium">{product.quantity}</p>
-                            </div>
-                          </div>
-                          <Button className="w-full" variant="outline">
-                            Imprimer
-                          </Button>
-                        </div>
-                      </DialogContent>
-                    </Dialog>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+      {!query && (
+        <Card>
+          <CardContent className="flex flex-col items-center py-16 text-muted-foreground gap-3">
+            <QrCode className="h-16 w-16 opacity-20" />
+            <p className="text-lg font-medium">Tapez pour rechercher un produit</p>
+            <p className="text-sm">Utilisez la barre ci-dessus ou scannez un QR code</p>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

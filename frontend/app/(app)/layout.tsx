@@ -1,15 +1,20 @@
+'use client';
+
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Sidebar } from '@/components/layout/sidebar';
 import { TopBar } from '@/components/layout/topbar';
+import { djangoClient } from '@/lib/django-client';
 
-export const metadata = {
-  title: 'E-kajy Entana',
-};
+export default function AppLayout({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
 
-export default function AppLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+  useEffect(() => {
+    if (!djangoClient.isAuthenticated()) {
+      router.replace('/login');
+    }
+  }, [router]);
+
   return (
     <div className="flex h-screen bg-background">
       <Sidebar />

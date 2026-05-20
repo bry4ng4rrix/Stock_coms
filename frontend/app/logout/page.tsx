@@ -2,21 +2,16 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/utils/supabase/client';
+import { djangoClient } from '@/lib/django-client';
 
 export default function LogoutPage() {
   const router = useRouter();
-  const supabase = createClient();
 
   useEffect(() => {
-    const logout = async () => {
-      await supabase.auth.signOut();
-      router.push('/login');
-      router.refresh();
-    };
-
-    logout();
-  }, [supabase, router]);
+    djangoClient.auth.logout();
+    router.push('/login');
+    router.refresh();
+  }, [router]);
 
   return (
     <div className="flex items-center justify-center min-h-screen">
