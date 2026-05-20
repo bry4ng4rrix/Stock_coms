@@ -45,7 +45,10 @@ class RegisterSerializer(serializers.ModelSerializer):
             AdminProfile.objects.create(user=user, company_name=company_name)
             return user
         elif role == "magasin":
-            admin = CustomUser.objects.get(email=admin_email, role="admin")
+            try:
+                admin = CustomUser.objects.get(email=admin_email, role="admin")
+            except CustomUser.DoesNotExist:
+                raise serializers.ValidationError({"admin_email": "Administrateur introuvable avec cet email."})
             user = CustomUser.objects.create(username=validated_data["email"], is_confirmed=False, **validated_data)
             user.set_password(password)
             user.save()
@@ -58,6 +61,8 @@ class RegisterSerializer(serializers.ModelSerializer):
                 magasin_user = CustomUser.objects.filter(email=admin_email, role="magasin").first()
                 if magasin_user:
                     magasin = MagasinProfile.objects.get(user=magasin_user)
+            if not admin and not magasin:
+                raise serializers.ValidationError({"admin_email": "Responsable (administrateur ou gérant) introuvable avec cet email."})
             user = CustomUser.objects.create(username=validated_data["email"], is_confirmed=False, **validated_data)
             user.set_password(password)
             user.save()
