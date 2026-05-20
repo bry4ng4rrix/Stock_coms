@@ -64,7 +64,7 @@ function imageUrl(path: string | null | undefined): string | null {
 
 const EMPTY_FORM = {
   reference: '', name: '', brand: '', description: '', category: '',
-  shell_price: '', unit_price: '', initial_quantity: '0', alert_threshold: '5',
+  shell_price: '', unit_price: '', magasin: '', initial_quantity: '0', alert_threshold: '5',
   expiry_date: '',
 };
 
@@ -77,6 +77,8 @@ export default function ProductsPage() {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [stores, setStores] = useState<any[]>([]);
+  const [storesLoading, setStoresLoading] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedStatus, setSelectedStatus] = useState('all');
 
@@ -111,7 +113,25 @@ export default function ProductsPage() {
     }
   }, []);
 
+  const fetchStores = useCallback(async () => {
+    if (!isAdmin) return;
+    setStoresLoading(true);
+    try {
+      const data = await djangoClient.get<any[]>('/users/magasins/users/');
+      setStores(data);
+    } catch (err: any) {
+      toast.error('Erreur de chargement des magasins: ' + (err.message || err));
+    } finally {
+      setStoresLoading(false);
+    }
+  }, [isAdmin]);
+
   useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    if (isAdmin && dialogOpen) {
+      fetchStores();
+    }
+  }, [isAdmin, dialogOpen, fetchStores]);
 
   const filteredProducts = products.filter(p => {
     const status = getStatus(p);
@@ -155,6 +175,10 @@ export default function ProductsPage() {
       toast.error('Veuillez remplir les champs obligatoires (Référence, Nom, Catégorie, Prix de vente)');
       return;
     }
+    if (isAdmin && !form.magasin) {
+      toast.error('Veuillez sélectionner un magasin.');
+      return;
+    }
     setSaving(true);
     try {
       const fd = new FormData();
@@ -167,8 +191,12 @@ export default function ProductsPage() {
       if (form.brand) fd.append('brand', form.brand);
       if (form.description) fd.append('description', form.description);
       if (form.expiry_date) fd.append('expiry_date', form.expiry_date);
-      if (isAdmin && form.unit_price) fd.append('unit_price', form.unit_price);
-      else if (!isAdmin) fd.append('unit_price', form.shell_price);
+      if (isAdmin) {
+        if (form.magasin) fd.append('magasin', String(form.magasin));
+        if (form.unit_price) fd.append('unit_price', form.unit_price);
+      } else {
+        fd.append('unit_price', form.shell_price);
+      }
       if (imageFile) fd.append('image1', imageFile);
 
       await djangoClient.postFormData('/users/products/', fd);
@@ -247,6 +275,7 @@ export default function ProductsPage() {
                 <DialogHeader><DialogTitle>Ajouter un produit</DialogTitle></DialogHeader>
                 <ProductForm
                   form={form} setForm={setForm} isAdmin={isAdmin}
+                  stores={stores} storesLoading={storesLoading}
                   imageFile={imageFile} setImageFile={setImageFile}
                   onSubmit={handleAddProduct} onCancel={() => setDialogOpen(false)}
                   saving={saving} submitLabel="Ajouter"
@@ -432,13 +461,20 @@ export default function ProductsPage() {
 
 interface ProductFormProps {
   form: any; setForm: (v: any) => void; isAdmin: boolean;
+  stores?: any[]; storesLoading?: boolean;
   imageFile: File | null; setImageFile: (f: File | null) => void;
   onSubmit: () => void; onCancel: () => void;
   saving: boolean; submitLabel: string; hideImage?: boolean;
 }
 
-function ProductForm({ form, setForm, isAdmin, imageFile, setImageFile, onSubmit, onCancel, saving, submitLabel, hideImage }: ProductFormProps) {
+function ProductForm({ form, setForm, isAdmin, stores = [], storesLoading = false, imageFile, setImageFile, onSubmit, onCancel, saving, submitLabel, hideImage }: ProductFormProps) {
+  const [storeFilter, setStoreFilter] = useState('');
   const set = (key: string, value: any) => setForm((prev: any) => ({ ...prev, [key]: value }));
+
+  const filteredStores = stores.filter((store) => {
+    const label = String(store.shop_name || store.manager?.full_name || '').toLowerCase();
+    return storeFilter === '' || label.includes(storeFilter.toLowerCase());
+  });
 
   return (
     <div className="space-y-5">
@@ -482,6 +518,37 @@ function ProductForm({ form, setForm, isAdmin, imageFile, setImageFile, onSubmit
             <SelectContent>{CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
           </Select>
         </div>
+        {isAdmin && (
+          <div className="space-y-2 md:col-span-2">
+            <Label>Magasin *</Label>
+            <Input
+              placeholder="Rechercher un magasin..."
+              value={storeFilter}
+              onChange={e => setStoreFilter(e.target.value)}
+            />
+            <Select
+              value={form.magasin ? String(form.magasin) : ''}
+              onValueChange={v => set('magasin', v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder={storesLoading ? 'Chargement des magasins...' : 'Choisir un magasin'} />
+              </SelectTrigger>
+              <SelectContent>
+                {storesLoading ? (
+                  <SelectItem value="__loading__" disabled>Chargement...</SelectItem>
+                ) : filteredStores.length > 0 ? (
+                  filteredStores.map(store => (
+                    <SelectItem key={store.magasin_id || store.id || store.shop_name} value={String(store.magasin_id || store.id || '')}>
+                      {store.shop_name || store.manager?.full_name || 'Magasin inconnu'}
+                    </SelectItem>
+                  ))
+                ) : (
+                  <SelectItem value="__none__" disabled>Aucun magasin trouvé</SelectItem>
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
         <div className="space-y-2 md:col-span-2">
           <Label>Description</Label>
           <Textarea placeholder="Description du produit..." rows={2} value={form.description || ''} onChange={e => set('description', e.target.value)} />

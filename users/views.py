@@ -26,8 +26,8 @@ class RegisterView(APIView):
     def post(self, request):
         serializer = RegisterSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save()
-            return Response({"message": "Inscription réussie"})
+            user = serializer.save()
+            return Response({"message": "Inscription réussie", "id": user.id})
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 # =========================
@@ -273,6 +273,53 @@ class UsersByMagasinView(APIView):
                 "shop_name": mag.shop_name,
                 "manager": manager_data,
                 "employers": employers_list
+            })
+
+        return Response(response_data)
+
+
+class MagasinStatsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+
+        if user.role == "admin":
+            magasins = MagasinProfile.objects.all()
+        elif user.role == "magasin":
+            magasins = MagasinProfile.objects.filter(user=user)
+        elif user.role == "employer":
+            try:
+                employer_profile = EmployerProfile.objects.get(user=user)
+                if employer_profile.magasin:
+                    magasins = MagasinProfile.objects.filter(id=employer_profile.magasin.id)
+                else:
+                    return Response([])
+            except EmployerProfile.DoesNotExist:
+                return Response({"error": "Employer profile not found"}, status=404)
+        else:
+            return Response({"error": "Role not supported"}, status=403)
+
+        response_data = []
+
+        for mag in magasins:
+            products_qs = Product.objects.filter(magasin=mag)
+            sales_qs = Sale.objects.filter(magasin=mag)
+
+            total_products = products_qs.count()
+            total_stock_value = products_qs.aggregate(
+                total=Coalesce(Sum(F('initial_quantity') * F('unit_price'), output_field=DecimalField()), 0)
+            )['total']
+            total_sold_value = sales_qs.aggregate(
+                total=Coalesce(Sum('total_price'), 0)
+            )['total']
+
+            response_data.append({
+                "magasin_id": mag.id,
+                "shop_name": mag.shop_name,
+                "total_products": total_products,
+                "total_stock_value": total_stock_value,
+                "total_sold_value": total_sold_value,
             })
 
         return Response(response_data)

@@ -40,37 +40,37 @@ export async function uploadImage(file: File): Promise<ImageUploadResult> {
 }
 
 /**
- * Upload image to Supabase Storage (when integrated)
+ * Upload image to Django backend (when integrated)
  * This is for future implementation with proper backend storage
  */
-export async function uploadImageToSupabase(
+export async function uploadImageToBackend(
   file: File,
-  productId: string,
-  supabaseClient: any
+  productId: string
 ): Promise<ImageUploadResult> {
   try {
-    const filename = `${productId}/${Date.now()}-${file.name}`;
-    const { data, error } = await supabaseClient.storage
-      .from('product-images')
-      .upload(filename, file, {
-        cacheControl: '3600',
-        upsert: false,
-      });
+    const formData = new FormData();
+    formData.append('image', file);
+    formData.append('product_id', productId);
 
-    if (error) throw error;
+    const response = await fetch('/api/upload', {
+      method: 'POST',
+      body: formData,
+    });
 
-    const { data: publicUrl } = supabaseClient.storage
-      .from('product-images')
-      .getPublicUrl(filename);
+    if (!response.ok) {
+      throw new Error('Failed to upload image');
+    }
 
+    const data = await response.json();
+    
     return {
-      url: publicUrl.publicUrl,
-      filename: data.path,
+      url: data.url,
+      filename: data.filename,
       size: file.size,
     };
   } catch (error) {
-    console.error('[v0] Error uploading image to Supabase:', error);
-    throw new Error('Failed to upload image to cloud storage');
+    console.error('[v0] Error uploading image to backend:', error);
+    throw new Error('Failed to upload image to backend storage');
   }
 }
 
@@ -152,13 +152,15 @@ export function getImageDimensions(imageUrl: string): Promise<{ width: number; h
 /**
  * Delete image from storage
  */
-export async function deleteImage(imagePath: string, supabaseClient: any): Promise<void> {
+export async function deleteImage(imagePath: string): Promise<void> {
   try {
-    const { error } = await supabaseClient.storage
-      .from('product-images')
-      .remove([imagePath]);
+    const response = await fetch(`/api/upload?path=${imagePath}`, {
+      method: 'DELETE',
+    });
 
-    if (error) throw error;
+    if (!response.ok) {
+      throw new Error('Failed to delete image');
+    }
   } catch (error) {
     console.error('[v0] Error deleting image:', error);
     throw new Error('Failed to delete image');

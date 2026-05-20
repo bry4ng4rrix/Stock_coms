@@ -36,6 +36,7 @@ export default function DashboardPage() {
     outOfStockCount: 0,
     mySalesToday:    0,
     totalAmountSold: 0,
+    totalSalesAllStores: 0,
     clientsCount:    0,
   });
 
@@ -120,6 +121,7 @@ export default function DashboardPage() {
         outOfStockCount,
         mySalesToday: rKpis.my_sales_today || rKpis.sales_today || 0,
         totalAmountSold: rKpis.total_amount_sold || rKpis.total_revenue || 0,
+        totalSalesAllStores: rKpis.total_revenue || 0,
         clientsCount: rKpis.clients_count || rKpis.total_sales || 0,
       });
 
@@ -241,6 +243,15 @@ export default function DashboardPage() {
           </>
         ) : (
           <>
+            <div className="xl:col-span-2">
+              <KpiCard
+                title="Ventes totales (tous magasins)"
+                value={`${fmt(kpis.totalSalesAllStores)} Ar`}
+                sub="Chiffre d'affaires global"
+                icon={TrendingUp}
+                color="text-green-600"
+              />
+            </div>
             <div className="xl:col-span-2">
               <KpiCard
                 title="Valeur du stock"

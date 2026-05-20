@@ -118,12 +118,18 @@ class DjangoAPIClient {
     endpoint: string,
     options: RequestInit = {},
   ): Promise<T> {
-    const url = `${API_BASE_URL}${endpoint}`
-    const headers = this.getAuthHeaders()
+    const normalizedEndpoint = endpoint.startsWith('http')
+      ? endpoint
+      : `${API_BASE_URL.replace(/\/$/, '')}/${endpoint.replace(/^\//, '')}`
 
-    let response = await fetch(url, {
+    const headers = this.getAuthHeaders()
+    const requestHeaders = new Headers(headers)
+    const extraHeaders = new Headers(options.headers ?? {})
+    extraHeaders.forEach((value, key) => requestHeaders.set(key, value))
+
+    let response = await fetch(normalizedEndpoint, {
       ...options,
-      headers: { ...headers, ...options.headers },
+      headers: requestHeaders,
     })
 
     if (response.status === 401) {
@@ -133,9 +139,13 @@ class DjangoAPIClient {
         throw new Error(error.detail || 'Authentication failed')
       }
 
-      response = await fetch(url, {
+      const refreshedHeaders = new Headers(this.getAuthHeaders())
+      const refreshedExtra = new Headers(options.headers ?? {})
+      refreshedExtra.forEach((value, key) => refreshedHeaders.set(key, value))
+
+      response = await fetch(normalizedEndpoint, {
         ...options,
-        headers: { ...this.getAuthHeaders(), ...options.headers },
+        headers: refreshedHeaders,
       })
     }
 

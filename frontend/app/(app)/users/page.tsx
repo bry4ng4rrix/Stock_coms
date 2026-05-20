@@ -150,7 +150,7 @@ export default function UsersPage() {
       }
       await djangoClient.auth.register(
         newUser.email,
-        newUser.full_name,
+        newUser.email,
         newUser.password,
         newUser.role,
         { full_name: newUser.full_name, ...extraData }

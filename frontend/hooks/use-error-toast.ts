@@ -12,11 +12,11 @@ export interface AppError {
 
 /**
  * Returns a stable `showError` function that fires a Sonner error toast.
- * Works with Supabase errors, native Errors, and plain strings.
+ * Works with API errors, native Errors, and plain strings.
  *
  * Usage:
  *   const { showError } = useErrorToast()
- *   const { error } = await supabase.from('products').select()
+ *   const { error } = await fetch('/api/users')
  *   if (error) showError(error)
  */
 export function useErrorToast() {

@@ -11,6 +11,7 @@ from .views import (
     ProfitView,
     SaleViewSet,
     UsersByMagasinView,
+    MagasinStatsView,
     DashboardView,
     ApiEndpointsListView,
     PendingUsersView,
@@ -49,6 +50,8 @@ urlpatterns = [
     path("sales/profit/", ProfitView.as_view()),
     # List of users grouped by magasin
     path("magasins/users/", UsersByMagasinView.as_view()),
+    # Store statistics by magasin
+    path("magasins/stats/", MagasinStatsView.as_view()),
     # Dashboard stats
     path("dashboard/", DashboardView.as_view()),
     # Pending users (awaiting approval)

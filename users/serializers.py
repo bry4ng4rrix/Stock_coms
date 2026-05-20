@@ -18,6 +18,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         model = CustomUser
         fields = [
             "id",
+            "username",
             "full_name",
             "email",
             "password",
@@ -32,6 +33,7 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         role = validated_data.get("role")
+        username = validated_data.pop("username", validated_data.get("email"))
         admin_email = validated_data.pop("admin_email", None)
         company_name = validated_data.pop("company_name", None)
         shop_name = validated_data.pop("shop_name", None)
@@ -39,7 +41,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         password = validated_data.pop("password")
 
         if role == "admin":
-            user = CustomUser.objects.create(username=validated_data["email"], is_confirmed=True, **validated_data)
+            user = CustomUser.objects.create(username=username, is_confirmed=True, **validated_data)
             user.set_password(password)
             user.save()
             AdminProfile.objects.create(user=user, company_name=company_name)
@@ -49,7 +51,7 @@ class RegisterSerializer(serializers.ModelSerializer):
                 admin = CustomUser.objects.get(email=admin_email, role="admin")
             except CustomUser.DoesNotExist:
                 raise serializers.ValidationError({"admin_email": "Administrateur introuvable avec cet email."})
-            user = CustomUser.objects.create(username=validated_data["email"], is_confirmed=False, **validated_data)
+            user = CustomUser.objects.create(username=username, is_confirmed=False, **validated_data)
             user.set_password(password)
             user.save()
             MagasinProfile.objects.create(user=user, admin=admin, shop_name=shop_name)
@@ -63,7 +65,7 @@ class RegisterSerializer(serializers.ModelSerializer):
                     magasin = MagasinProfile.objects.get(user=magasin_user)
             if not admin and not magasin:
                 raise serializers.ValidationError({"admin_email": "Responsable (administrateur ou gérant) introuvable avec cet email."})
-            user = CustomUser.objects.create(username=validated_data["email"], is_confirmed=False, **validated_data)
+            user = CustomUser.objects.create(username=username, is_confirmed=False, **validated_data)
             user.set_password(password)
             user.save()
             EmployerProfile.objects.create(user=user, admin=admin, magasin=magasin, position=position)
