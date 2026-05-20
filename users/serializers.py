@@ -5,6 +5,7 @@ from .models import (
     MagasinProfile,
     EmployerProfile,
     Product,
+    Notification,
     Sale,
 )
 
@@ -73,6 +74,8 @@ class RegisterSerializer(serializers.ModelSerializer):
         raise serializers.ValidationError("Role invalide")
 
 class ProductSerializer(serializers.ModelSerializer):
+    shop_name = serializers.CharField(source='magasin.shop_name', read_only=True)
+
     class Meta:
         model = Product
         fields = "__all__"
@@ -115,3 +118,15 @@ class SaleSerializer(serializers.ModelSerializer):
                     {"quantity": f"Quantité en stock insuffisante. Stock disponible : {product.initial_quantity}."}
                 )
         return attrs
+
+
+class NotificationSerializer(serializers.ModelSerializer):
+    magasin_name = serializers.CharField(source="magasin.shop_name", read_only=True)
+    product_name = serializers.CharField(source="product.name", read_only=True)
+    sale_id = serializers.IntegerField(source="sale.id", read_only=True)
+    user_name = serializers.CharField(source="user.full_name", read_only=True)
+
+    class Meta:
+        model = Notification
+        fields = ["id", "notif_type", "message", "magasin", "magasin_name", "product", "product_name", "sale", "sale_id", "user", "user_name", "is_read", "created_at"]
+        read_only_fields = ["id", "created_at"]

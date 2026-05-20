@@ -351,6 +351,7 @@ export default function ProductsPage() {
                     <TableHead>Catégorie</TableHead>
                     <TableHead className="text-right">Stock</TableHead>
                     <TableHead className="text-right">Prix vente</TableHead>
+                    {isAdmin && <TableHead>Magasin</TableHead>}
                     {isAdmin && <TableHead className="text-right">Prix achat</TableHead>}
                     <TableHead>Péremption</TableHead>
                     <TableHead>Statut</TableHead>
@@ -386,6 +387,11 @@ export default function ProductsPage() {
                           <Badge variant="outline">{product.initial_quantity ?? 0}</Badge>
                         </TableCell>
                         <TableCell className="text-right text-sm">{Number(product.shell_price || 0).toLocaleString('fr-MG')} Ar</TableCell>
+                        {isAdmin && (
+                          <TableCell className="text-sm">
+                            {product.shop_name || product.magasin?.shop_name || '—'}
+                          </TableCell>
+                        )}
                         {isAdmin && (
                           <TableCell className="text-right text-sm text-muted-foreground">
                             {product.unit_price != null ? `${Number(product.unit_price).toLocaleString('fr-MG')} Ar` : '—'}

@@ -38,6 +38,7 @@ export default function DashboardPage() {
     totalAmountSold: 0,
     totalSalesAllStores: 0,
     clientsCount:    0,
+    totalProfit:     0,
   });
 
   // Charts
@@ -123,6 +124,7 @@ export default function DashboardPage() {
         totalAmountSold: rKpis.total_amount_sold || rKpis.total_revenue || 0,
         totalSalesAllStores: rKpis.total_revenue || 0,
         clientsCount: rKpis.clients_count || rKpis.total_sales || 0,
+        totalProfit: rKpis.total_profit || 0,
       });
 
       setCategoryChart(
@@ -258,6 +260,15 @@ export default function DashboardPage() {
                 value={`${fmt(kpis.totalValue)} Ar`}
                 sub="Valeur totale de l'inventaire"
                 icon={DollarSign}
+              />
+            </div>
+            <div className="xl:col-span-2">
+              <KpiCard
+                title="Bénéfice total"
+                value={`${fmt(kpis.totalProfit)} Ar`}
+                sub="Profit net (vente - achat)"
+                icon={CheckCircle2}
+                color="text-emerald-600"
               />
             </div>
             <KpiCard

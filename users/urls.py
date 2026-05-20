@@ -18,6 +18,7 @@ from .views import (
     DeleteUserView,
     RejectUserView,
     ChangePasswordView,
+    NotificationViewSet,
 )
 
 from rest_framework_simplejwt.views import TokenRefreshView
@@ -29,6 +30,7 @@ router = DefaultRouter()
 # Register product and sale viewsets
 router.register(r"products", ProductViewSet, basename="products")
 router.register(r"sales", SaleViewSet, basename="sales")
+router.register(r"notifications", NotificationViewSet, basename="notifications")
 
 class CustomLoginView(TokenViewBase):
     serializer_class = CustomTokenObtainPairSerializer

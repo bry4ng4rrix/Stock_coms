@@ -34,10 +34,14 @@ export default function StoresPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [data, stats] = await Promise.all([
-        djangoClient.get<any[]>('/users/magasins/users/'),
-        djangoClient.get<any[]>('/users/magasins/stats/'),
-      ]);
+      const data = await djangoClient.get<any[]>('/users/magasins/users/');
+      let stats: any[] = [];
+      try {
+        stats = await djangoClient.get<any[]>('/users/magasins/stats/');
+      } catch (statsErr) {
+        console.error('Store stats failed', statsErr);
+        toast.error('Impossible de charger les statistiques des magasins.');
+      }
 
       const merged = data.map((store) => ({
         ...store,
@@ -209,7 +213,7 @@ export default function StoresPage() {
                   </div>
                 )}
                 <div className="grid gap-3">
-                  <div className="grid grid-cols-3 gap-2 text-sm">
+                  <div className="grid grid-cols-4 gap-2 text-sm">
                     <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                       <p className="text-muted-foreground text-[10px] uppercase tracking-wider">Produits</p>
                       <p className="text-lg font-semibold">{formatNumber(store.stats?.total_products)}</p>
@@ -221,6 +225,10 @@ export default function StoresPage() {
                     <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                       <p className="text-muted-foreground text-[10px] uppercase tracking-wider">Valeur vendue</p>
                       <p className="text-lg font-semibold">{formatCurrency(store.stats?.total_sold_value)}</p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <p className="text-muted-foreground text-[10px] uppercase tracking-wider">Bénéfice</p>
+                      <p className="text-lg font-semibold">{formatCurrency(store.stats?.profit)}</p>
                     </div>
                   </div>
                   <div className="text-sm">

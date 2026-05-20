@@ -12,6 +12,8 @@ from .serializers import RegisterSerializer, ProductSerializer, SaleSerializer
 from .permissions import IsAdmin
 from rest_framework_simplejwt.views import TokenViewBase
 from .authentication import CustomTokenObtainPairSerializer
+from .models import Notification
+from .serializers import NotificationSerializer
 
 # =========================
 # AUTH LOGIN
@@ -219,6 +221,59 @@ class ProductViewSet(viewsets.ModelViewSet):
             return Response({"error": "Seul admin peut supprimer"}, status=403)
         return super().destroy(request, *args, **kwargs)
 
+
+# =========================
+# NOTIFICATION VIEWSET
+# =========================
+class NotificationViewSet(viewsets.ModelViewSet):
+    serializer_class = NotificationSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = Notification.objects.select_related('magasin','product','sale','user')
+        if user.role == 'admin':
+            return qs
+        elif user.role == 'magasin':
+            try:
+                magasin = MagasinProfile.objects.get(user=user)
+                return qs.filter(magasin=magasin)
+            except MagasinProfile.DoesNotExist:
+                return Notification.objects.none()
+        elif user.role == 'employer':
+            try:
+                employer = EmployerProfile.objects.get(user=user)
+                if employer.magasin:
+                    return qs.filter(magasin=employer.magasin)
+            except EmployerProfile.DoesNotExist:
+                pass
+            return Notification.objects.none()
+
+    def partial_update(self, request, *args, **kwargs):
+        # allow marking as read
+        instance = self.get_object()
+        is_read = request.data.get('is_read', None)
+        if is_read is not None:
+            instance.is_read = bool(is_read)
+            instance.save()
+            return Response(self.get_serializer(instance).data)
+        return super().partial_update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        # allow deletion if admin or if related to user's magasin
+        instance = self.get_object()
+        user = request.user
+        if user.role == 'admin':
+            return super().destroy(request, *args, **kwargs)
+        if user.role in ['magasin','employer']:
+            try:
+                magasin = MagasinProfile.objects.get(user=user) if user.role == 'magasin' else EmployerProfile.objects.get(user=user).magasin
+            except Exception:
+                magasin = None
+            if instance.magasin and magasin and instance.magasin.id == magasin.id:
+                return super().destroy(request, *args, **kwargs)
+        return Response({"error": "Permission refusée"}, status=403)
+
 # =========================
 # USERS BY MAGASIN VIEW
 # =========================
@@ -308,11 +363,15 @@ class MagasinStatsView(APIView):
 
             total_products = products_qs.count()
             total_stock_value = products_qs.aggregate(
-                total=Coalesce(Sum(F('initial_quantity') * F('unit_price'), output_field=DecimalField()), 0)
+                total=Coalesce(Sum(F('initial_quantity') * F('unit_price'), output_field=DecimalField()), 0, output_field=DecimalField())
             )['total']
             total_sold_value = sales_qs.aggregate(
-                total=Coalesce(Sum('total_price'), 0)
+                total=Coalesce(Sum('total_price', output_field=DecimalField()), 0, output_field=DecimalField())
             )['total']
+            # compute profit = revenue - cost
+            revenue = sales_qs.aggregate(total=Coalesce(Sum('total_price', output_field=DecimalField()), 0, output_field=DecimalField()))['total']
+            cost = sales_qs.aggregate(total=Coalesce(Sum(F('product__unit_price') * F('quantity'), output_field=DecimalField()), 0, output_field=DecimalField()))['total']
+            profit = (revenue or 0) - (cost or 0)
 
             response_data.append({
                 "magasin_id": mag.id,
@@ -320,6 +379,7 @@ class MagasinStatsView(APIView):
                 "total_products": total_products,
                 "total_stock_value": total_stock_value,
                 "total_sold_value": total_sold_value,
+                "profit": profit,
             })
 
         return Response(response_data)

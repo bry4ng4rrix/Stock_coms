@@ -230,3 +230,29 @@ class Sale(models.Model):
 
     def __str__(self):
         return f"Sale of {self.product.name} x {self.quantity}"
+
+
+class Notification(models.Model):
+    NOTIF_TYPES = (
+        ("sale", "Sale"),
+        ("product", "Product"),
+        ("user", "User"),
+        ("other", "Other"),
+    )
+
+    notif_type = models.CharField(max_length=20, choices=NOTIF_TYPES, default="other")
+    message = models.TextField()
+    # optional relations
+    magasin = models.ForeignKey(MagasinProfile, on_delete=models.CASCADE, null=True, blank=True, related_name="notifications")
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, null=True, blank=True, related_name="notifications")
+    sale = models.ForeignKey(Sale, on_delete=models.CASCADE, null=True, blank=True, related_name="notifications")
+    user = models.ForeignKey(CustomUser, on_delete=models.SET_NULL, null=True, blank=True, related_name="notifications")
+
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"[{self.get_notif_type_display()}] {self.message[:60]}"
