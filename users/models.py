@@ -228,6 +228,14 @@ class Sale(models.Model):
         self.total_price = self.quantity * self.sale_price
         super().save(*args, **kwargs)
 
+    @property
+    def profit_per_unit(self):
+        return self.sale_price - self.product.unit_price
+
+    @property
+    def total_profit(self):
+        return self.profit_per_unit * self.quantity
+
     def __str__(self):
         return f"Sale of {self.product.name} x {self.quantity}"
 

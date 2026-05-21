@@ -92,6 +92,8 @@ class SaleSerializer(serializers.ModelSerializer):
     seller_name = serializers.CharField(source="seller.full_name", read_only=True)
     shop_name = serializers.CharField(source="magasin.shop_name", read_only=True)
     product_name = serializers.CharField(source="product.name", read_only=True)
+    profit_per_unit = serializers.SerializerMethodField(read_only=True)
+    total_profit = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Sale
@@ -106,6 +108,8 @@ class SaleSerializer(serializers.ModelSerializer):
             "quantity",
             "sale_price",
             "total_price",
+            "profit_per_unit",
+            "total_profit",
             "sold_at",
         ]
 
@@ -118,6 +122,12 @@ class SaleSerializer(serializers.ModelSerializer):
                     {"quantity": f"Quantité en stock insuffisante. Stock disponible : {product.initial_quantity}."}
                 )
         return attrs
+
+    def get_profit_per_unit(self, obj):
+        return obj.profit_per_unit
+
+    def get_total_profit(self, obj):
+        return obj.total_profit
 
 
 class NotificationSerializer(serializers.ModelSerializer):

@@ -141,7 +141,8 @@ class TotalsView(APIView):
 # PROFIT VIEW
 # =========================
 class ProfitView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsAdmin]
+
     def get(self, request):
         revenue = Sale.objects.aggregate(
             total=Sum(F('sale_price') * F('quantity'), output_field=DecimalField())
@@ -150,7 +151,52 @@ class ProfitView(APIView):
             total=Sum(F('product__unit_price') * F('quantity'), output_field=DecimalField())
         )['total'] or 0
         profit = revenue - cost
-        return Response({'profit': profit})
+        return Response({
+            'total_revenue': revenue,
+            'total_cost': cost,
+            'total_profit': profit,
+        })
+
+
+# =========================
+# ADMIN MAGASIN PROFIT VIEW
+# =========================
+class AdminMagasinProfitView(APIView):
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def get(self, request):
+        magasins = MagasinProfile.objects.filter(admin=request.user).annotate(
+            total_revenue=Coalesce(
+                Sum(F('sales__sale_price') * F('sales__quantity'), output_field=DecimalField()),
+                0,
+                output_field=DecimalField()
+            ),
+            total_cost=Coalesce(
+                Sum(F('sales__product__unit_price') * F('sales__quantity'), output_field=DecimalField()),
+                0,
+                output_field=DecimalField()
+            ),
+            total_profit=Coalesce(
+                Sum((F('sales__sale_price') - F('sales__product__unit_price')) * F('sales__quantity'), output_field=DecimalField()),
+                0,
+                output_field=DecimalField()
+            ),
+            total_quantity=Coalesce(Sum('sales__quantity', output_field=DecimalField()), 0, output_field=DecimalField()),
+        )
+
+        data = []
+        for magasin in magasins:
+            data.append({
+                'magasin_id': magasin.id,
+                'shop_name': magasin.shop_name,
+                'total_quantity_sold': magasin.total_quantity,
+                'total_revenue': magasin.total_revenue,
+                'total_cost': magasin.total_cost,
+                'total_profit': magasin.total_profit,
+            })
+
+        return Response({'profit_by_magasins': data})
+
 
 # =========================
 # SALE VIEWSET
@@ -674,8 +720,15 @@ class ApiEndpointsListView(APIView):
                 "path": "/api/users/sales/profit/",
                 "method": "GET",
                 "auth_required": True,
-                "roles_allowed": ["admin", "magasin", "employer"],
-                "description": "Calcule le bénéfice réel total (somme de (sale_price - unit_price) * quantity)."
+                "roles_allowed": ["admin"],
+                "description": "Calcule le bénéfice réel total (somme de (sale_price - unit_price) * quantity) pour l'administrateur."
+            },
+            {
+                "path": "/api/users/sales/profit-by-magasins/",
+                "method": "GET",
+                "auth_required": True,
+                "roles_allowed": ["admin"],
+                "description": "Liste le bénéfice total, le chiffre d'affaires et le coût pour chaque magasin appartenant à l'administrateur."
             },
             {
                 "path": "/api/users/magasins/users/",

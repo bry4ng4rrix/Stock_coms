@@ -9,6 +9,7 @@ from .views import (
     ProductViewSet,
     TotalsView,
     ProfitView,
+    AdminMagasinProfitView,
     SaleViewSet,
     UsersByMagasinView,
     MagasinStatsView,
@@ -50,6 +51,7 @@ urlpatterns = [
     # Totals and profit (prepended with sales/)
     path("sales/totals/", TotalsView.as_view()),
     path("sales/profit/", ProfitView.as_view()),
+    path("sales/profit-by-magasins/", AdminMagasinProfitView.as_view()),
     # List of users grouped by magasin
     path("magasins/users/", UsersByMagasinView.as_view()),
     # Store statistics by magasin
