@@ -7,7 +7,7 @@ from django.db.models.functions import Coalesce
 from django.utils import timezone
 from datetime import timedelta
 
-from .models import CustomUser, Product, MagasinProfile, Sale, EmployerProfile, AdminProfile
+from .models import CustomUser, Product, MagasinProfile, Sale, EmployerProfile, AdminProfile, Movement
 from .serializers import RegisterSerializer, ProductSerializer, SaleSerializer
 from .permissions import IsAdmin
 from rest_framework_simplejwt.views import TokenViewBase
@@ -259,9 +259,79 @@ class ProductViewSet(viewsets.ModelViewSet):
                 pass
         serializer.save(magasin=magasin)
     def update(self, request, *args, **kwargs):
-        if request.user.role != "admin":
-            return Response({"error": "Seul admin peut modifier"}, status=403)
-        return super().update(request, *args, **kwargs)
+        user = request.user
+        instance = self.get_object()
+        old_qty = int(instance.initial_quantity or 0)
+
+        if user.role == "admin":
+            response = super().update(request, *args, **kwargs)
+            new_instance = self.get_object()
+            new_qty = int(new_instance.initial_quantity or 0)
+            if 'initial_quantity' in request.data and new_qty != old_qty:
+                Movement.objects.create(
+                    product=new_instance,
+                    magasin=new_instance.magasin,
+                    changed_by=user,
+                    previous_quantity=old_qty,
+                    new_quantity=new_qty,
+                    change=new_qty - old_qty,
+                    note=f"Modification de stock par {user.full_name}"
+                )
+                movement_type = 'Entrée' if new_qty > old_qty else 'Sortie'
+                Notification.objects.create(
+                    notif_type='product',
+                    message=f"{movement_type} de stock: {new_instance.name} {new_qty - old_qty:+} unités par {user.full_name}",
+                    magasin=new_instance.magasin,
+                    product=new_instance,
+                    user=user
+                )
+            return response
+
+        if user.role == "magasin":
+            # ensure product belongs to this magasin
+            try:
+                magasin = MagasinProfile.objects.get(user=user)
+            except MagasinProfile.DoesNotExist:
+                return Response({"error": "Magasin introuvable"}, status=404)
+
+            if instance.magasin is None or instance.magasin.id != magasin.id:
+                return Response({"error": "Seul admin peut modifier"}, status=403)
+
+            if 'initial_quantity' not in request.data:
+                return Response({"error": "Seul admin peut modifier"}, status=403)
+
+            try:
+                new_qty = int(request.data.get('initial_quantity'))
+            except Exception:
+                return Response({"error": "Quantité invalide"}, status=400)
+
+            if new_qty < old_qty:
+                return Response({"error": "Seul admin peut modifier"}, status=403)
+
+            instance.initial_quantity = new_qty
+            instance.save()
+
+            Movement.objects.create(
+                product=instance,
+                magasin=magasin,
+                changed_by=user,
+                previous_quantity=old_qty,
+                new_quantity=new_qty,
+                change=new_qty - old_qty,
+                note=f"Ajout manuel par {user.full_name}"
+            )
+            Notification.objects.create(
+                notif_type='product',
+                message=f"Entrée de stock: {instance.name} +{new_qty - old_qty} unités par {user.full_name}",
+                magasin=magasin,
+                product=instance,
+                user=user
+            )
+
+            serializer = self.get_serializer(instance)
+            return Response(serializer.data)
+
+        return Response({"error": "Seul admin peut modifier"}, status=403)
     def destroy(self, request, *args, **kwargs):
         if request.user.role != "admin":
             return Response({"error": "Seul admin peut supprimer"}, status=403)

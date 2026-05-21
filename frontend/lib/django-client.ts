@@ -277,8 +277,34 @@ class DjangoAPIClient {
       } as unknown as AuthResponse
     },
 
-    logout: () => {
-      this.clearTokensFromStorage()
+    logout: async () => {
+      const refreshToken = this.tokens?.refresh || (() => {
+        if (typeof window === 'undefined') return null
+        try {
+          const stored = localStorage.getItem('django_tokens')
+          return stored ? JSON.parse(stored).refresh : null
+        } catch {
+          return null
+        }
+      })()
+
+      if (refreshToken) {
+        try {
+          await fetch(`${API_BASE_URL}/users/refresh/`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refresh: refreshToken }),
+          })
+        } catch (error) {
+          console.warn('[v0] Logout refresh request failed:', error)
+        }
+      }
+
+      if (typeof window !== 'undefined') {
+        localStorage.clear()
+      }
+
+      this.tokens = null
     },
 
     getCurrentUser: async () => {

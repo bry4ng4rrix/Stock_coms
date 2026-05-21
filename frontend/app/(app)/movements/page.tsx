@@ -210,6 +210,7 @@ export default function MovementsPage() {
                   <TableRow>
                     <TableHead>Date</TableHead>
                     <TableHead>Produit</TableHead>
+                    <TableHead>Type</TableHead>
                     <TableHead className="text-right">Quantité</TableHead>
                     <TableHead className="text-right">Prix unitaire</TableHead>
                     <TableHead className="text-right">Total</TableHead>
@@ -220,7 +221,7 @@ export default function MovementsPage() {
                 <TableBody>
                   {filteredSales.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={isManager ? 8 : 7} className="text-center text-muted-foreground py-8">
                         Aucune vente enregistrée
                       </TableCell>
                     </TableRow>
@@ -229,6 +230,11 @@ export default function MovementsPage() {
                       <TableCell className="text-sm">{formatDate(s.sold_at)}</TableCell>
                       <TableCell>
                         <p className="font-medium text-sm">{s.product_name || `Produit #${s.product}`}</p>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="bg-red-50 text-red-700">
+                          Sortie
+                        </Badge>
                       </TableCell>
                       <TableCell className="text-right font-medium">
                         <Badge variant="outline" className="bg-red-50 text-red-700">
@@ -297,6 +303,7 @@ function DailySalesTable({ groups, today, isManager }: { groups: Record<string, 
                   <TableRow>
                     <TableHead>Heure</TableHead>
                     <TableHead>Produit</TableHead>
+                    <TableHead>Type</TableHead>
                     <TableHead className="text-right">Qté</TableHead>
                     <TableHead className="text-right">Total</TableHead>
                     <TableHead>Vendeur</TableHead>
@@ -310,6 +317,9 @@ function DailySalesTable({ groups, today, isManager }: { groups: Record<string, 
                         {new Date(s.sold_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
                       </TableCell>
                       <TableCell className="font-medium text-sm">{s.product_name || `Produit #${s.product}`}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="bg-red-50 text-red-700">Sortie</Badge>
+                      </TableCell>
                       <TableCell className="text-right font-medium">{s.quantity}</TableCell>
                       <TableCell className="text-right font-semibold text-sm">{fmt(Number(s.total_price || 0))} Ar</TableCell>
                       <TableCell className="text-sm">{s.seller_name || 'Système'}</TableCell>

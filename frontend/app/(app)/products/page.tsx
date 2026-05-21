@@ -94,6 +94,10 @@ export default function ProductsPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deletingProduct, setDeletingProduct] = useState<any>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [addStockDialogOpen, setAddStockDialogOpen] = useState(false);
+  const [addingProduct, setAddingProduct] = useState<any>(null);
+  const [addAmount, setAddAmount] = useState<number | string>(0);
+  const [addLoading, setAddLoading] = useState(false);
 
   const expiringProducts = products
     .filter(p => p.expiry_date)
@@ -408,12 +412,18 @@ export default function ProductsPage() {
                         <TableCell>
                           <Badge className={statusColor(status)}>{statusLabel(status)}</Badge>
                         </TableCell>
-                        {(canEdit || canDelete) && (
+                        {(canEdit || canDelete || isManager) && (
                           <TableCell>
                             <div className="flex gap-1">
                               {canEdit && (
                                 <Button variant="ghost" size="sm" onClick={() => { setEditingProduct({ ...product }); setEditDialogOpen(true); }}>
                                   <Pencil className="h-4 w-4" />
+                                </Button>
+                              )}
+                              {/* Managers can only add stock (increase quantity), not edit or delete */}
+                              {isManager && (
+                                <Button variant="ghost" size="sm" onClick={() => { setAddingProduct(product); setAddAmount(0); setAddStockDialogOpen(true); }}>
+                                  <Plus className="h-4 w-4" />
                                 </Button>
                               )}
                               {canDelete && (
@@ -458,6 +468,51 @@ export default function ProductsPage() {
             <Button variant="destructive" onClick={handleDelete} disabled={deleteLoading}>
               {deleteLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Supprimer
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Stock Dialog (for managers) */}
+      <Dialog open={addStockDialogOpen} onOpenChange={setAddStockDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Ajouter du stock</DialogTitle>
+            <DialogDescription>Ajoute une quantité positive au stock existant. Cette action ne peut qu'augmenter la quantité.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Produit</Label>
+              <div className="font-medium">{addingProduct?.name || ''} — Réf: {addingProduct?.reference || ''}</div>
+              <div className="text-sm text-muted-foreground">Stock actuel: {addingProduct?.initial_quantity ?? 0}</div>
+            </div>
+            <div>
+              <Label>Quantité à ajouter</Label>
+              <Input type="number" min={1} value={String(addAmount)} onChange={e => setAddAmount(Number(e.target.value || 0))} />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setAddStockDialogOpen(false)}>Annuler</Button>
+              <Button onClick={async () => {
+                if (!addingProduct) return;
+                const add = Number(addAmount) || 0;
+                if (add <= 0) { toast.error('Veuillez spécifier une quantité positive à ajouter.'); return; }
+                setAddLoading(true);
+                try {
+                  const current = Number(addingProduct.initial_quantity || 0);
+                  const newQty = current + add;
+                  const fd = new FormData();
+                  fd.append('initial_quantity', String(newQty));
+                  await djangoClient.patchFormData(`/users/products/${addingProduct.id}/`, fd);
+                  toast.success('Stock mis à jour');
+                  setAddStockDialogOpen(false);
+                  setAddingProduct(null);
+                  await fetchData();
+                } catch (err: any) {
+                  toast.error(err?.message || 'Erreur lors de la mise à jour du stock');
+                } finally {
+                  setAddLoading(false);
+                }
+              }} disabled={addLoading}>{addLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : 'Ajouter'}</Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

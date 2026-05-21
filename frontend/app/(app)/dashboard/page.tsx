@@ -113,10 +113,12 @@ export default function DashboardPage() {
 
       setWeeklyTrend(last7Days);
 
+      const stockValue = rKpis.total_stock_value ?? rKpis.stock_value ?? totalValue;
+
       setKpis({
         totalProducts: products.length,
         totalQuantity,
-        totalValue: rKpis.total_stock_value || totalValue,
+        totalValue: stockValue,
         totalEmployees: rKpis.total_employers || rKpis.total_magasins || 0,
         lowStockCount: rKpis.low_stock_count || lowStockCount,
         outOfStockCount,

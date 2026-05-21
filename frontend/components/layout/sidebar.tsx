@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import {
   BarChart3,
   Shirt,
@@ -25,6 +25,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useCurrentUser } from '@/lib/auth/useCurrentUser';
+import { djangoClient } from '@/lib/django-client';
 
 const navigationItems = [
   {
@@ -59,11 +60,6 @@ const navigationItems = [
     href: '/reports',
     icon: FileBarChart,
     adminOnly: true,
-  },
-  {
-    label: 'Fournisseurs',
-    href: '/suppliers',
-    icon: Truck,
   },
   {
     label: 'Utilisateurs',
@@ -109,8 +105,15 @@ const navigationItems = [
 
 export function Sidebar() {
   const [open, setOpen] = useState(false);
+  const router = useRouter();
   const pathname = usePathname();
   const { user, isAdmin, isSuperAdmin, isAdminOrSuperAdmin, loading } = useCurrentUser();
+
+  const handleLogout = async () => {
+    await djangoClient.auth.logout();
+    router.push('/login');
+    router.refresh();
+  }
 
   return (
     <>
@@ -196,12 +199,10 @@ export function Sidebar() {
                 'w-full justify-start text-sm font-medium transition-all duration-200',
                 'text-slate-500 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800/60'
               )}
-              asChild
+              onClick={handleLogout}
             >
-              <Link href="/logout">
-                <LogOut className="h-4 w-4 mr-2" />
-                Déconnexion
-              </Link>
+              <LogOut className="h-4 w-4 mr-2" />
+              Déconnexion
             </Button>
           </div>
         </div>

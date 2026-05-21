@@ -83,6 +83,14 @@ class CustomUser(AbstractUser):
 
         super().save(*args, **kwargs)
 
+    @property
+    def movement_type(self):
+        if self.change > 0:
+            return 'Entrée'
+        if self.change < 0:
+            return 'Sortie'
+        return 'Aucune'
+
     def __str__(self):
         return f"{self.full_name} ({self.role})"
 
@@ -264,3 +272,30 @@ class Notification(models.Model):
 
     def __str__(self):
         return f"[{self.get_notif_type_display()}] {self.message[:60]}"
+
+
+class Movement(models.Model):
+    """Record stock movements (adding/removing) for products."""
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="movements")
+    magasin = models.ForeignKey(MagasinProfile, on_delete=models.SET_NULL, null=True, blank=True, related_name="movements")
+    changed_by = models.ForeignKey(CustomUser, on_delete=models.SET_NULL, null=True, blank=True, related_name="movements")
+    previous_quantity = models.IntegerField()
+    new_quantity = models.IntegerField()
+    change = models.IntegerField()  # new_quantity - previous_quantity
+    note = models.CharField(max_length=255, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    @property
+    def movement_type(self):
+        if self.change > 0:
+            return "Entrée"
+        if self.change < 0:
+            return "Sortie"
+        return "Aucune"
+
+    def __str__(self):
+        who = self.changed_by.full_name if self.changed_by else 'Unknown'
+        return f"Movement {self.product.reference}: {self.change} by {who} at {self.created_at}"
