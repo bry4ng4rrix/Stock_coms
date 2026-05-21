@@ -18,7 +18,7 @@ const fmt = (n: number) =>
 
 export default function MovementsPage() {
   const { user, isAdmin, isManager } = useCurrentUser();
-  const [sales, setSales] = useState<any[]>([]);
+  const [movements, setMovements] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -26,11 +26,11 @@ export default function MovementsPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [salesData, productsData] = await Promise.all([
-        djangoClient.sales.list(),
+      const [movementsData, productsData] = await Promise.all([
+        djangoClient.movements.list(),
         djangoClient.products.list(),
       ]);
-      setSales(salesData);
+      setMovements(movementsData);
       setProducts(productsData);
     } catch (err) {
       console.error('Error fetching data:', err);
@@ -41,39 +41,42 @@ export default function MovementsPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const filteredSales = useMemo(() =>
-    sales.filter(s => {
+  const filteredMovements = useMemo(() =>
+    movements.filter(m => {
       const term = searchTerm.toLowerCase();
       return !term ||
-        (s.product_name || '').toLowerCase().includes(term) ||
-        (s.seller_name || '').toLowerCase().includes(term) ||
-        (s.shop_name || '').toLowerCase().includes(term);
+        (m.product_name || '').toLowerCase().includes(term) ||
+        (m.changed_by_name || '').toLowerCase().includes(term) ||
+        (m.magasin_name || '').toLowerCase().includes(term) ||
+        (m.note || '').toLowerCase().includes(term);
     }),
-    [sales, searchTerm]
+    [movements, searchTerm]
   );
 
   const movementStats = useMemo(() => {
-    const statsMap: Record<string, { name: string; outQty: number }> = {};
-    sales.forEach(s => {
-      const name = s.product_name || 'Produit inconnu';
-      if (!statsMap[name]) statsMap[name] = { name, outQty: 0 };
-      statsMap[name].outQty += s.quantity || 0;
+    const statsMap: Record<string, { name: string; qty: number }> = {};
+    movements.forEach(m => {
+      const name = m.product_name || 'Produit inconnu';
+      if (!statsMap[name]) statsMap[name] = { name, qty: 0 };
+      statsMap[name].qty += Math.abs(m.change || 0);
     });
-    const sorted = Object.values(statsMap).sort((a, b) => b.outQty - a.outQty);
+    const sorted = Object.values(statsMap).sort((a, b) => b.qty - a.qty);
     return {
       fastest: sorted.slice(0, 5),
       slowest: products
         .filter(p => !sorted.some(s => s.name === p.name))
         .slice(0, 5)
-        .map(p => ({ name: p.name, outQty: 0 })),
+        .map(p => ({ name: p.name, qty: 0 })),
     };
-  }, [sales, products]);
+  }, [movements, products]);
 
-  const totalRevenue = useMemo(() =>
-    sales.reduce((sum, s) => sum + Number(s.total_price || 0), 0), [sales]);
+  const totalEntries = useMemo(() =>
+    movements.reduce((sum, m) => sum + (m.change > 0 ? m.change : 0), 0), [movements]);
 
-  const totalQty = useMemo(() =>
-    sales.reduce((sum, s) => sum + (s.quantity || 0), 0), [sales]);
+  const totalExits = useMemo(() =>
+    movements.reduce((sum, m) => sum + (m.change < 0 ? Math.abs(m.change) : 0), 0), [movements]);
+
+  const totalMovements = useMemo(() => movements.length, [movements]);
 
   const formatDate = (d: string) =>
     new Date(d).toLocaleDateString('fr-FR', {
@@ -84,13 +87,13 @@ export default function MovementsPage() {
   const groupedByDay = useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
     const groups: Record<string, any[]> = {};
-    filteredSales.forEach(s => {
-      const day = new Date(s.sold_at).toISOString().split('T')[0];
+    filteredMovements.forEach(m => {
+      const day = new Date(m.created_at).toISOString().split('T')[0];
       if (!groups[day]) groups[day] = [];
-      groups[day].push(s);
+      groups[day].push(m);
     });
     return { groups, today };
-  }, [filteredSales]);
+  }, [filteredMovements]);
 
   return (
     <div className="p-6 space-y-6">
@@ -98,7 +101,7 @@ export default function MovementsPage() {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Mouvements de stock</h1>
-          <p className="text-muted-foreground mt-1">Historique complet des sorties</p>
+          <p className="text-muted-foreground mt-1">Historique complet des mouvements de stock</p>
         </div>
         <div className="flex items-center gap-2">
           <Input
@@ -123,27 +126,27 @@ export default function MovementsPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {loading ? <Skeleton className="h-8 w-20" /> : <div className="text-2xl font-bold">{totalQty} unités</div>}
+            {loading ? <Skeleton className="h-8 w-20" /> : <div className="text-2xl font-bold">{fmt(totalExits)} unités</div>}
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-green-500" />Chiffre d'affaires
+              <TrendingUp className="h-4 w-4 text-green-500" />Total entrées
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {loading ? <Skeleton className="h-8 w-28" /> : <div className="text-2xl font-bold">{fmt(totalRevenue)} Ar</div>}
+            {loading ? <Skeleton className="h-8 w-28" /> : <div className="text-2xl font-bold">{fmt(totalEntries)} unités</div>}
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Package className="h-4 w-4 text-blue-500" />Nb transactions
+              <Package className="h-4 w-4 text-blue-500" />Nb mouvements
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {loading ? <Skeleton className="h-8 w-12" /> : <div className="text-2xl font-bold">{sales.length}</div>}
+            {loading ? <Skeleton className="h-8 w-12" /> : <div className="text-2xl font-bold">{totalMovements}</div>}
           </CardContent>
         </Card>
       </div>
@@ -160,11 +163,11 @@ export default function MovementsPage() {
             {loading ? <Skeleton className="h-24 w-full" /> : (
               <div className="space-y-3">
                 {movementStats.fastest.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Aucune vente enregistrée.</p>
+                  <p className="text-sm text-muted-foreground">Aucun mouvement enregistré.</p>
                 ) : movementStats.fastest.map((p, i) => (
                   <div key={i} className="flex justify-between items-center border-b pb-2 last:border-0">
                     <span className="font-medium text-sm">{p.name}</span>
-                    <Badge variant="outline" className="bg-green-50 text-green-700">{p.outQty} vendus</Badge>
+                    <Badge variant="outline" className="bg-green-50 text-green-700">{p.qty} unités</Badge>
                   </div>
                 ))}
               </div>
@@ -174,18 +177,18 @@ export default function MovementsPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-lg flex items-center text-orange-600">
-              <ArrowDown className="mr-2 h-5 w-5" />Produits sans vente
+            <ArrowDown className="mr-2 h-5 w-5" />Produits sans mouvement
             </CardTitle>
           </CardHeader>
           <CardContent>
             {loading ? <Skeleton className="h-24 w-full" /> : (
               <div className="space-y-3">
                 {movementStats.slowest.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Tous les produits ont été vendus.</p>
+                  <p className="text-sm text-muted-foreground">Tous les produits ont été mouvementés.</p>
                 ) : movementStats.slowest.map((p, i) => (
                   <div key={i} className="flex justify-between items-center border-b pb-2 last:border-0">
                     <span className="font-medium text-sm">{p.name}</span>
-                    <Badge variant="outline" className="bg-orange-50 text-orange-700">0 vente</Badge>
+                    <Badge variant="outline" className="bg-orange-50 text-orange-700">0 mouvement</Badge>
                   </div>
                 ))}
               </div>
@@ -197,8 +200,8 @@ export default function MovementsPage() {
       {/* History Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Historique des sorties (ventes)</CardTitle>
-          <CardDescription>{filteredSales.length} transaction(s) affichée(s)</CardDescription>
+          <CardTitle>Historique des mouvements de stock</CardTitle>
+          <CardDescription>{filteredMovements.length} mouvement(s) affiché(s)</CardDescription>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -212,42 +215,58 @@ export default function MovementsPage() {
                     <TableHead>Produit</TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead className="text-right">Quantité</TableHead>
-                    <TableHead className="text-right">Prix unitaire</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
-                    <TableHead>Vendeur</TableHead>
+                    <TableHead>Note</TableHead>
+                    <TableHead>Utilisateur</TableHead>
                     {isManager && <TableHead>Magasin</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredSales.length === 0 ? (
+                  {filteredMovements.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={isManager ? 8 : 7} className="text-center text-muted-foreground py-8">
-                        Aucune vente enregistrée
+                      <TableCell colSpan={isManager ? 7 : 6} className="text-center text-muted-foreground py-8">
+                        Aucun mouvement enregistré
                       </TableCell>
                     </TableRow>
-                  ) : filteredSales.map(s => (
-                    <TableRow key={s.id}>
-                      <TableCell className="text-sm">{formatDate(s.sold_at)}</TableCell>
+                  ) : filteredMovements.map(m => (
+                    <TableRow key={m.id}>
+                      <TableCell className="text-sm">{formatDate(m.created_at)}</TableCell>
                       <TableCell>
-                        <p className="font-medium text-sm">{s.product_name || `Produit #${s.product}`}</p>
+                        <p className="font-medium text-sm">{m.product_name || `Produit #${m.product}`}</p>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="bg-red-50 text-red-700">
-                          Sortie
+                        <Badge
+                          variant="outline"
+                          className={
+                            m.movement_type === 'Entrée'
+                              ? 'bg-green-50 text-green-700'
+                              : m.movement_type === 'Sortie'
+                              ? 'bg-red-50 text-red-700'
+                              : 'bg-orange-50 text-orange-700'
+                          }
+                        >
+                          {m.movement_type || 'Mise à jour'}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right font-medium">
-                        <Badge variant="outline" className="bg-red-50 text-red-700">
-                          <ArrowDown className="h-3 w-3 mr-1 inline" />{s.quantity}
+                        <Badge
+                          variant="outline"
+                          className={
+                            m.change > 0
+                              ? 'bg-green-50 text-green-700'
+                              : m.change < 0
+                              ? 'bg-red-50 text-red-700'
+                              : 'bg-orange-50 text-orange-700'
+                          }
+                        >
+                          {m.change > 0 ? '+' : ''}{m.change}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right text-sm">{fmt(Number(s.sale_price || 0))} Ar</TableCell>
-                      <TableCell className="text-right font-semibold text-sm">{fmt(Number(s.total_price || 0))} Ar</TableCell>
-                      <TableCell className="text-sm">{s.seller_name || 'Système'}</TableCell>
+                      <TableCell className="text-sm">{m.note || '-'}</TableCell>
+                      <TableCell className="text-sm">{m.changed_by_name || 'Système'}</TableCell>
                       {isManager && (
                         <TableCell className="text-sm">
                           <Badge variant="outline" className="font-normal border-blue-200 text-blue-700 bg-blue-50/50">
-                            {s.shop_name || '-'}
+                            {m.magasin_name || '-'}
                           </Badge>
                         </TableCell>
                       )}
@@ -261,12 +280,12 @@ export default function MovementsPage() {
       </Card>
 
       {/* Grouped by day */}
-      <DailySalesTable groups={groupedByDay.groups} today={groupedByDay.today} isManager={isManager} />
+      <DailyMovementsTable groups={groupedByDay.groups} today={groupedByDay.today} isManager={isManager} />
     </div>
   );
 }
 
-function DailySalesTable({ groups, today, isManager }: { groups: Record<string, any[]>; today: string; isManager: boolean }) {
+function DailyMovementsTable({ groups, today, isManager }: { groups: Record<string, any[]>; today: string; isManager: boolean }) {
   const sortedDates = Object.keys(groups).filter(d => d !== today).sort((a, b) => b.localeCompare(a));
   if (sortedDates.length === 0) return null;
 
@@ -284,15 +303,15 @@ function DailySalesTable({ groups, today, isManager }: { groups: Record<string, 
 
   return (
     <div className="space-y-6">
-      <h2 className="text-xl font-bold tracking-tight">Ventes par jour</h2>
+      <h2 className="text-xl font-bold tracking-tight">Mouvements par jour</h2>
       {sortedDates.map(dateKey => (
         <Card key={dateKey}>
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2 capitalize">
               {label(dateKey)}
-              <Badge variant="outline">{groups[dateKey].length} vente(s)</Badge>
+              <Badge variant="outline">{groups[dateKey].length} mouvement(s)</Badge>
               <span className="text-sm font-normal text-muted-foreground ml-auto">
-                {fmt(groups[dateKey].reduce((s, x) => s + Number(x.total_price || 0), 0))} Ar
+                {fmt(groups[dateKey].reduce((s, x) => s + Math.abs(x.change || 0), 0))} unités
               </span>
             </CardTitle>
           </CardHeader>
@@ -305,28 +324,52 @@ function DailySalesTable({ groups, today, isManager }: { groups: Record<string, 
                     <TableHead>Produit</TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead className="text-right">Qté</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
-                    <TableHead>Vendeur</TableHead>
+                    <TableHead>Note</TableHead>
+                    <TableHead>Utilisateur</TableHead>
                     {isManager && <TableHead>Magasin</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {groups[dateKey].map(s => (
-                    <TableRow key={s.id}>
+                  {groups[dateKey].map(m => (
+                    <TableRow key={m.id}>
                       <TableCell className="text-sm">
-                        {new Date(s.sold_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                        {new Date(m.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
                       </TableCell>
-                      <TableCell className="font-medium text-sm">{s.product_name || `Produit #${s.product}`}</TableCell>
+                      <TableCell className="font-medium text-sm">{m.product_name || `Produit #${m.product}`}</TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="bg-red-50 text-red-700">Sortie</Badge>
+                        <Badge
+                          variant="outline"
+                          className={
+                            m.movement_type === 'Entrée'
+                              ? 'bg-green-50 text-green-700'
+                              : m.movement_type === 'Sortie'
+                              ? 'bg-red-50 text-red-700'
+                              : 'bg-orange-50 text-orange-700'
+                          }
+                        >
+                          {m.movement_type || 'Mise à jour'}
+                        </Badge>
                       </TableCell>
-                      <TableCell className="text-right font-medium">{s.quantity}</TableCell>
-                      <TableCell className="text-right font-semibold text-sm">{fmt(Number(s.total_price || 0))} Ar</TableCell>
-                      <TableCell className="text-sm">{s.seller_name || 'Système'}</TableCell>
+                      <TableCell className="text-right font-medium">
+                        <Badge
+                          variant="outline"
+                          className={
+                            m.change > 0
+                              ? 'bg-green-50 text-green-700'
+                              : m.change < 0
+                              ? 'bg-red-50 text-red-700'
+                              : 'bg-orange-50 text-orange-700'
+                          }
+                        >
+                          {m.change > 0 ? '+' : ''}{m.change}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-sm">{m.note || '-'}</TableCell>
+                      <TableCell className="text-sm">{m.changed_by_name || 'Système'}</TableCell>
                       {isManager && (
                         <TableCell className="text-sm">
                           <Badge variant="outline" className="font-normal border-blue-200 text-blue-700 bg-blue-50/50">
-                            {s.shop_name || '-'}
+                            {m.magasin_name || '-'}
                           </Badge>
                         </TableCell>
                       )}

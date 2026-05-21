@@ -158,7 +158,31 @@ class DjangoAPIClient {
       throw new Error(message)
     }
 
-    return response.json()
+    // After fetch, ensure response is JSON before parsing
+    const contentType = response.headers.get('content-type') || '';
+    if (!response.ok) {
+      // Attempt to extract error details if JSON, else fallback to text
+      let errorMessage = `API Error: ${response.status}`;
+      if (contentType.includes('application/json')) {
+        const error = await response.json();
+        const message = error.detail ||
+          (Array.isArray(error.non_field_errors) ? error.non_field_errors[0] : null) ||
+          Object.entries(error).map(([k, v]) => `${k}: ${Array.isArray(v) ? v[0] : v}`).join(' | ');
+        if (message) errorMessage = message;
+      } else {
+        const text = await response.text();
+        errorMessage = `Non-JSON error response: ${text.slice(0, 200)}`;
+      }
+      throw new Error(errorMessage);
+    }
+    // Successful response
+    if (contentType.includes('application/json')) {
+      return response.json();
+    }
+    // Unexpected content type
+    const text = await response.text();
+    throw new Error(`Unexpected non-JSON response: ${text.slice(0, 200)}`);
+    
   }
 
   async get<T>(endpoint: string): Promise<T> {
@@ -419,6 +443,21 @@ class DjangoAPIClient {
     },
   }
 
+  // ==================== Movements Service ====================
+  movements = {
+    list: async (filters?: { store_id?: number; movement_type?: string }) => {
+      const params = new URLSearchParams()
+      if (filters?.store_id) params.append('store_id', filters.store_id.toString())
+      if (filters?.movement_type) params.append('movement_type', filters.movement_type)
+      const query = params.toString() ? `?${params.toString()}` : ''
+      return this.get<any[]>(`/users/movements/${query}`)
+    },
+
+    getById: async (id: number) => {
+      return this.get<any>(`/users/movements/${id}/`)
+    },
+  }
+
   // ==================== Users Service ====================
   users = {
     list: async (role?: string) => {
@@ -493,7 +532,7 @@ class DjangoAPIClient {
     },
 
     getStoreByManager: async (managerId: number) => {
-      const list = await this.list()
+      const list = await this.stores.list()
       return list.find((m: any) => m.manager?.id === managerId) || null
     },
   }

@@ -11,6 +11,7 @@ from .views import (
     ProfitView,
     AdminMagasinProfitView,
     SaleViewSet,
+    MovementViewSet,
     UsersByMagasinView,
     MagasinStatsView,
     DashboardView,
@@ -31,6 +32,7 @@ router = DefaultRouter()
 # Register product and sale viewsets
 router.register(r"products", ProductViewSet, basename="products")
 router.register(r"sales", SaleViewSet, basename="sales")
+router.register(r"movements", MovementViewSet, basename="movements")
 router.register(r"notifications", NotificationViewSet, basename="notifications")
 
 class CustomLoginView(TokenViewBase):

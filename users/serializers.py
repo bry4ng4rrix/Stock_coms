@@ -7,6 +7,7 @@ from .models import (
     Product,
     Notification,
     Sale,
+    Movement,
 )
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -128,6 +129,48 @@ class SaleSerializer(serializers.ModelSerializer):
 
     def get_total_profit(self, obj):
         return obj.total_profit
+
+
+class MovementSerializer(serializers.ModelSerializer):
+    product_name = serializers.SerializerMethodField(read_only=True)
+    product_reference = serializers.CharField(source="product.reference", read_only=True)
+    magasin_name = serializers.CharField(source="magasin.shop_name", read_only=True)
+    changed_by_name = serializers.CharField(source="changed_by.full_name", read_only=True)
+
+    class Meta:
+        model = Movement
+        fields = [
+            "id",
+            "product",
+            "product_name",
+            "product_reference",
+            "magasin",
+            "magasin_name",
+            "changed_by",
+            "changed_by_name",
+            "previous_quantity",
+            "new_quantity",
+            "change",
+            "previous_unit_price",
+            "new_unit_price",
+            "previous_shell_price",
+            "new_shell_price",
+            "movement_type",
+            "note",
+            "created_at",
+        ]
+        read_only_fields = [
+            "id",
+            "created_at",
+            "movement_type",
+            "product_name",
+            "product_reference",
+            "magasin_name",
+            "changed_by_name",
+        ]
+
+    def get_product_name(self, obj):
+        return obj.product_name or (obj.product.name if obj.product else None)
 
 
 class NotificationSerializer(serializers.ModelSerializer):

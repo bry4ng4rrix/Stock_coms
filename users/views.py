@@ -8,12 +8,11 @@ from django.utils import timezone
 from datetime import timedelta
 
 from .models import CustomUser, Product, MagasinProfile, Sale, EmployerProfile, AdminProfile, Movement
-from .serializers import RegisterSerializer, ProductSerializer, SaleSerializer
+from .serializers import RegisterSerializer, ProductSerializer, SaleSerializer, MovementSerializer, NotificationSerializer
 from .permissions import IsAdmin
 from rest_framework_simplejwt.views import TokenViewBase
 from .authentication import CustomTokenObtainPairSerializer
 from .models import Notification
-from .serializers import NotificationSerializer
 
 # =========================
 # AUTH LOGIN
@@ -217,10 +216,47 @@ class SaleViewSet(viewsets.ModelViewSet):
         return Sale.objects.none()
     def perform_create(self, serializer):
         product = serializer.validated_data.get('product')
+        old_qty = product.initial_quantity or 0
         sale = serializer.save(seller=self.request.user, magasin=product.magasin)
-        # Deduct the sold quantity from the product's stock
         product.initial_quantity -= sale.quantity
+        product.total_profit += sale.total_profit
         product.save()
+        Movement.objects.create(
+            product=product,
+            product_name=product.name,
+            magasin=product.magasin,
+            changed_by=self.request.user,
+            previous_quantity=old_qty,
+            new_quantity=product.initial_quantity,
+            change=-sale.quantity,
+            note=f"Vente par {self.request.user.full_name}"
+        )
+
+
+class MovementViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = MovementSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = Movement.objects.select_related('product', 'magasin', 'changed_by')
+        if user.role == 'admin':
+            return qs
+        elif user.role == 'magasin':
+            try:
+                magasin = MagasinProfile.objects.get(user=user)
+                return qs.filter(magasin=magasin)
+            except MagasinProfile.DoesNotExist:
+                return Movement.objects.none()
+        elif user.role == 'employer':
+            try:
+                employer = EmployerProfile.objects.get(user=user)
+                if employer.magasin:
+                    return qs.filter(magasin=employer.magasin)
+            except EmployerProfile.DoesNotExist:
+                pass
+        return Movement.objects.none()
+
 
 # =========================
 # PRODUCT VIEWSET
@@ -257,26 +293,77 @@ class ProductViewSet(viewsets.ModelViewSet):
                 magasin = employer.magasin
             except EmployerProfile.DoesNotExist:
                 pass
-        serializer.save(magasin=magasin)
+        product = serializer.save(magasin=magasin)
+        Movement.objects.create(
+            product=product,
+            product_name=product.name,
+            magasin=magasin,
+            changed_by=user,
+            previous_quantity=0,
+            new_quantity=product.initial_quantity,
+            change=product.initial_quantity,
+            previous_unit_price=None,
+            new_unit_price=product.unit_price,
+            previous_shell_price=None,
+            new_shell_price=product.shell_price,
+            note=f"Nouveau produit créé par {user.full_name}"
+        )
     def update(self, request, *args, **kwargs):
         user = request.user
         instance = self.get_object()
         old_qty = int(instance.initial_quantity or 0)
+        old_unit_price = instance.unit_price
+        old_shell_price = instance.shell_price
+        old_name = instance.name
+        old_reference = instance.reference
+        old_brand = instance.brand
+        old_category = instance.category
+        old_description = instance.description
+        old_expiry_date = instance.expiry_date
 
         if user.role == "admin":
             response = super().update(request, *args, **kwargs)
             new_instance = self.get_object()
             new_qty = int(new_instance.initial_quantity or 0)
+            changed_fields = []
+            movement_data = {
+                'product': new_instance,
+                'product_name': new_instance.name,
+                'magasin': new_instance.magasin,
+                'changed_by': user,
+                'previous_quantity': old_qty,
+                'new_quantity': new_qty,
+                'change': new_qty - old_qty,
+            }
+
             if 'initial_quantity' in request.data and new_qty != old_qty:
-                Movement.objects.create(
-                    product=new_instance,
-                    magasin=new_instance.magasin,
-                    changed_by=user,
-                    previous_quantity=old_qty,
-                    new_quantity=new_qty,
-                    change=new_qty - old_qty,
-                    note=f"Modification de stock par {user.full_name}"
-                )
+                changed_fields.append(f"stock {new_qty - old_qty:+d}")
+            if 'unit_price' in request.data and float(new_instance.unit_price) != float(old_unit_price):
+                movement_data['previous_unit_price'] = old_unit_price
+                movement_data['new_unit_price'] = new_instance.unit_price
+                changed_fields.append(f"prix unitaire {old_unit_price}→{new_instance.unit_price}")
+            if 'shell_price' in request.data and float(new_instance.shell_price) != float(old_shell_price):
+                movement_data['previous_shell_price'] = old_shell_price
+                movement_data['new_shell_price'] = new_instance.shell_price
+                changed_fields.append(f"prix caisse {old_shell_price}→{new_instance.shell_price}")
+            if 'name' in request.data and new_instance.name != old_name:
+                changed_fields.append("nom")
+            if 'reference' in request.data and new_instance.reference != old_reference:
+                changed_fields.append("référence")
+            if 'brand' in request.data and new_instance.brand != old_brand:
+                changed_fields.append("marque")
+            if 'category' in request.data and new_instance.category != old_category:
+                changed_fields.append("catégorie")
+            if 'description' in request.data and new_instance.description != old_description:
+                changed_fields.append("description")
+            if 'expiry_date' in request.data and new_instance.expiry_date != old_expiry_date:
+                changed_fields.append("date d'expiration")
+
+            if changed_fields:
+                movement_data['note'] = f"Mise à jour produit par {user.full_name} : {', '.join(changed_fields)}"
+                Movement.objects.create(**movement_data)
+
+            if 'initial_quantity' in request.data and new_qty != old_qty:
                 movement_type = 'Entrée' if new_qty > old_qty else 'Sortie'
                 Notification.objects.create(
                     notif_type='product',
@@ -288,7 +375,6 @@ class ProductViewSet(viewsets.ModelViewSet):
             return response
 
         if user.role == "magasin":
-            # ensure product belongs to this magasin
             try:
                 magasin = MagasinProfile.objects.get(user=user)
             except MagasinProfile.DoesNotExist:
@@ -296,6 +382,19 @@ class ProductViewSet(viewsets.ModelViewSet):
 
             if instance.magasin is None or instance.magasin.id != magasin.id:
                 return Response({"error": "Seul admin peut modifier"}, status=403)
+
+            blocked_fields = [
+                'unit_price',
+                'shell_price',
+                'name',
+                'reference',
+                'brand',
+                'category',
+                'description',
+                'expiry_date',
+            ]
+            if any(field in request.data for field in blocked_fields):
+                return Response({"error": "Seuls les admins peuvent modifier les détails ou les prix du produit."}, status=403)
 
             if 'initial_quantity' not in request.data:
                 return Response({"error": "Seul admin peut modifier"}, status=403)
@@ -313,6 +412,7 @@ class ProductViewSet(viewsets.ModelViewSet):
 
             Movement.objects.create(
                 product=instance,
+                product_name=instance.name,
                 magasin=magasin,
                 changed_by=user,
                 previous_quantity=old_qty,
@@ -335,6 +435,17 @@ class ProductViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         if request.user.role != "admin":
             return Response({"error": "Seul admin peut supprimer"}, status=403)
+        instance = self.get_object()
+        Movement.objects.create(
+            product=instance,
+            product_name=instance.name,
+            magasin=instance.magasin,
+            changed_by=request.user,
+            previous_quantity=instance.initial_quantity or 0,
+            new_quantity=0,
+            change=-(instance.initial_quantity or 0),
+            note=f"Suppression produit par {request.user.full_name}"
+        )
         return super().destroy(request, *args, **kwargs)
 
 

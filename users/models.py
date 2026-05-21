@@ -10,10 +10,8 @@ from django.contrib.auth.base_user import BaseUserManager
 class CustomUserManager(BaseUserManager):
 
     def create_user(self,email,password=None,**extra_fields):
-
         if not email:
             raise ValueError("L'email est obligatoire")
-
         email = self.normalize_email(email)
 
         user = self.model(
@@ -23,21 +21,15 @@ class CustomUserManager(BaseUserManager):
         )
 
         user.set_password(password)
-
         user.save(using=self._db)
-
         return user
 
     def create_superuser(self,email,password=None,**extra_fields):
 
         extra_fields.setdefault("is_staff", True)
-
         extra_fields.setdefault("is_superuser", True)
-
         extra_fields.setdefault("is_active", True)
-
         extra_fields.setdefault("is_confirmed", True)
-
         extra_fields.setdefault("role", "admin")
 
         user = self.create_user(
@@ -82,14 +74,6 @@ class CustomUser(AbstractUser):
             self.is_staff = False
 
         super().save(*args, **kwargs)
-
-    @property
-    def movement_type(self):
-        if self.change > 0:
-            return 'Entrée'
-        if self.change < 0:
-            return 'Sortie'
-        return 'Aucune'
 
     def __str__(self):
         return f"{self.full_name} ({self.role})"
@@ -183,6 +167,7 @@ class Product(models.Model):
 
     initial_quantity = models.IntegerField()
     alert_threshold = models.IntegerField()
+    total_profit = models.DecimalField(max_digits=12, decimal_places=2, default=0)
 
     # =====================================
     # DATES
@@ -217,6 +202,7 @@ class Product(models.Model):
     image2 = models.ImageField(upload_to="products/",blank=True,null=True)
     image3 = models.ImageField(upload_to="products/",blank=True,null=True)
     qr_code = models.ImageField(upload_to="products/",blank=True,null=True)
+
     def __str__(self):
         return self.name
 
@@ -227,22 +213,19 @@ class Sale(models.Model):
     magasin = models.ForeignKey("MagasinProfile", on_delete=models.SET_NULL, related_name="sales", null=True, blank=True)
     seller = models.ForeignKey(CustomUser, on_delete=models.SET_NULL, related_name="sales", null=True, blank=True)
     quantity = models.PositiveIntegerField()
-    sale_price = models.DecimalField(max_digits=10, decimal_places=2)  # price per unit at sale (shell_price)
-    total_price = models.DecimalField(max_digits=12, decimal_places=2, editable=False)
+    sale_price = models.DecimalField(max_digits=10, decimal_places=2)
+    unit_cost = models.DecimalField(max_digits=10, decimal_places=2, editable=False, default=0)
+    profit_per_unit = models.DecimalField(max_digits=10, decimal_places=2, editable=False, default=0)
+    total_price = models.DecimalField(max_digits=12, decimal_places=2, editable=False, default=0)
+    total_profit = models.DecimalField(max_digits=12, decimal_places=2, editable=False, default=0)
     sold_at = models.DateTimeField(auto_now_add=True)
 
     def save(self, *args, **kwargs):
-        # Ensure total_price reflects quantity * sale_price
+        self.unit_cost = self.product.unit_price
+        self.profit_per_unit = self.sale_price - self.unit_cost
         self.total_price = self.quantity * self.sale_price
+        self.total_profit = self.profit_per_unit * self.quantity
         super().save(*args, **kwargs)
-
-    @property
-    def profit_per_unit(self):
-        return self.sale_price - self.product.unit_price
-
-    @property
-    def total_profit(self):
-        return self.profit_per_unit * self.quantity
 
     def __str__(self):
         return f"Sale of {self.product.name} x {self.quantity}"
@@ -277,11 +260,16 @@ class Notification(models.Model):
 class Movement(models.Model):
     """Record stock movements (adding/removing) for products."""
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="movements")
+    product_name = models.CharField(max_length=255, blank=True, null=True)
     magasin = models.ForeignKey(MagasinProfile, on_delete=models.SET_NULL, null=True, blank=True, related_name="movements")
     changed_by = models.ForeignKey(CustomUser, on_delete=models.SET_NULL, null=True, blank=True, related_name="movements")
     previous_quantity = models.IntegerField()
     new_quantity = models.IntegerField()
     change = models.IntegerField()  # new_quantity - previous_quantity
+    previous_unit_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    new_unit_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    previous_shell_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    new_shell_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     note = models.CharField(max_length=255, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -294,8 +282,11 @@ class Movement(models.Model):
             return "Entrée"
         if self.change < 0:
             return "Sortie"
-        return "Aucune"
+        if self.note and "Suppression" in self.note:
+            return "Suppression"
+        return "Mise à jour"
 
     def __str__(self):
         who = self.changed_by.full_name if self.changed_by else 'Unknown'
-        return f"Movement {self.product.reference}: {self.change} by {who} at {self.created_at}"
+        product_name = self.product_name or (self.product.name if self.product else 'Produit inconnu')
+        return f"Movement {product_name}: {self.change} by {who} at {self.created_at}"
