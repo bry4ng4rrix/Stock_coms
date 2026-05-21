@@ -450,9 +450,8 @@ class DjangoAPIClient {
       return this.get<any[]>('/users/magasins/users/')
     },
 
-    getById: async (id: number) => {
-      const list = await this.list()
-      return list.find((m: any) => m.magasin_id === id) || null
+    getProfitByMagasins: async () => {
+      return this.get<any>('/users/sales/profit-by-magasins/')
     },
 
     create: async (data: any) => {

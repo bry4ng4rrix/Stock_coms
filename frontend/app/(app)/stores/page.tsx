@@ -36,6 +36,7 @@ export default function StoresPage() {
     try {
       const data = await djangoClient.get<any[]>('/users/magasins/users/');
       let stats: any[] = [];
+      let profitByMagasins: any[] = [];
       try {
         stats = await djangoClient.get<any[]>('/users/magasins/stats/');
       } catch (statsErr) {
@@ -43,14 +44,33 @@ export default function StoresPage() {
         toast.error('Impossible de charger les statistiques des magasins.');
       }
 
-      const merged = data.map((store) => ({
-        ...store,
-        stats: stats.find((item) => item.magasin_id === store.magasin_id) || {
+      if (isAdmin) {
+        try {
+          const profitRes = await djangoClient.stores.getProfitByMagasins();
+          profitByMagasins = profitRes.profit_by_magasins || [];
+        } catch (profitErr) {
+          console.error('Profit by magasins failed', profitErr);
+        }
+      }
+
+      const merged = data.map((store) => {
+        const storeStats = stats.find((item) => item.magasin_id === store.magasin_id) || {
           total_products: 0,
           total_stock_value: 0,
           total_sold_value: 0,
-        },
-      }));
+          profit: 0,
+        };
+        const profitStats = profitByMagasins.find((item) => item.magasin_id === store.magasin_id);
+        return {
+          ...store,
+          stats: {
+            ...storeStats,
+            profit: profitStats?.total_profit ?? storeStats.profit ?? 0,
+            total_revenue: profitStats?.total_revenue ?? storeStats.total_sold_value ?? 0,
+            total_cost: profitStats?.total_cost ?? 0,
+          },
+        };
+      });
 
       setStores(merged);
     } catch (err) {
@@ -58,7 +78,7 @@ export default function StoresPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isAdmin]);
 
   const handleRegisterStore = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -119,7 +139,7 @@ export default function StoresPage() {
     new Intl.NumberFormat('fr-FR').format(Number(value ?? 0));
 
   const formatCurrency = (value: number | string | null | undefined) =>
-    new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(Number(value ?? 0));
+    `${new Intl.NumberFormat('fr-MG', { minimumFractionDigits: 0 }).format(Number(value ?? 0))} Ar`;
 
   useEffect(() => { fetchData(); }, [fetchData]);
 

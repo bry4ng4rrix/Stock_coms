@@ -542,6 +542,8 @@ class DashboardView(APIView):
             # KPIs (without exposing company wide unit_price)
             sales_today = Sale.objects.filter(magasin=magasin, sold_at__date=today).count()
             profit_today = Sale.objects.filter(magasin=magasin, sold_at__date=today).aggregate(total=Sum(F('sale_price') * F('quantity') - F('product__unit_price') * F('quantity'), output_field=DecimalField()))['total'] or 0
+            total_revenue = Sale.objects.filter(magasin=magasin).aggregate(total=Sum('total_price', output_field=DecimalField()))['total'] or 0
+            total_profit = Sale.objects.filter(magasin=magasin).aggregate(total=Sum(F('sale_price') * F('quantity') - F('product__unit_price') * F('quantity'), output_field=DecimalField()))['total'] or 0
             stock_value = Product.objects.filter(magasin=magasin).aggregate(total=Sum(F('initial_quantity') * F('unit_price'), output_field=DecimalField()))['total'] or 0
             total_products = Product.objects.filter(magasin=magasin).count()
             total_sales = Sale.objects.filter(magasin=magasin).count()
@@ -582,6 +584,8 @@ class DashboardView(APIView):
                 "kpis": {
                     "sales_today": sales_today,
                     "profit_today": profit_today,
+                    "total_revenue": total_revenue,
+                    "total_profit": total_profit,
                     "stock_value": stock_value,
                     "total_products": total_products,
                     "total_sales": total_sales,
