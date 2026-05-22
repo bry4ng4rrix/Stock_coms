@@ -24,6 +24,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import * as XLSX from 'xlsx';
+import { QRCodeSVG } from 'qrcode.react';
 
 const MEDIA_BASE = (process.env.NEXT_PUBLIC_DJANGO_API_URL || 'http://localhost:8000/api')
   .replace('/api', '');
@@ -85,6 +86,7 @@ export default function ProductsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imageFiles, setImageFiles] = useState<(File | null)[]>([null, null, null]);
   const [saving, setSaving] = useState(false);
 
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -98,6 +100,13 @@ export default function ProductsPage() {
   const [addingProduct, setAddingProduct] = useState<any>(null);
   const [addAmount, setAddAmount] = useState<number | string>(0);
   const [addLoading, setAddLoading] = useState(false);
+
+  const [imagePreviewOpen, setImagePreviewOpen] = useState(false);
+  const [previewProduct, setPreviewProduct] = useState<any>(null);
+  const [previewIndex, setPreviewIndex] = useState(0);
+
+  const [qrDialogOpen, setQrDialogOpen] = useState(false);
+  const [qrProduct, setQrProduct] = useState<any>(null);
 
   const expiringProducts = products
     .filter(p => p.expiry_date)
@@ -203,12 +212,16 @@ export default function ProductsPage() {
       if (isAdmin && form.magasin) {
         fd.append('magasin', String(form.magasin));
       }
-      if (imageFile) fd.append('image1', imageFile);
+      if (imageFiles[0]) fd.append('image1', imageFiles[0]);
+      else if (imageFile) fd.append('image1', imageFile);
+      if (imageFiles[1]) fd.append('image2', imageFiles[1]);
+      if (imageFiles[2]) fd.append('image3', imageFiles[2]);
 
       await djangoClient.postFormData('/users/products/', fd);
       toast.success('Produit ajouté avec succès');
       setForm({ ...EMPTY_FORM });
       setImageFile(null);
+      setImageFiles([null, null, null]);
       setDialogOpen(false);
       await fetchData();
     } catch (err: any) {
@@ -283,6 +296,7 @@ export default function ProductsPage() {
                   form={form} setForm={setForm} isAdmin={isAdmin}
                   stores={stores} storesLoading={storesLoading}
                   imageFile={imageFile} setImageFile={setImageFile}
+                  imageFiles={imageFiles} setImageFiles={setImageFiles}
                   onSubmit={handleAddProduct} onCancel={() => setDialogOpen(false)}
                   saving={saving} submitLabel="Ajouter"
                 />
@@ -361,6 +375,7 @@ export default function ProductsPage() {
                     {isAdmin && <TableHead className="text-right">Prix achat</TableHead>}
                     <TableHead>Péremption</TableHead>
                     <TableHead>Statut</TableHead>
+                    <TableHead className="text-center w-16">QR Code</TableHead>
                     {(canEdit || canDelete) && <TableHead>Actions</TableHead>}
                   </TableRow>
                 </TableHeader>
@@ -376,7 +391,14 @@ export default function ProductsPage() {
                     return (
                       <TableRow key={product.id}>
                         <TableCell>
-                          <div className="w-10 h-10 rounded overflow-hidden bg-muted border flex-shrink-0 flex items-center justify-center">
+                          <div
+                            className="w-10 h-10 rounded overflow-hidden bg-muted border flex-shrink-0 flex items-center justify-center cursor-pointer hover:ring-2 hover:ring-blue-400 transition-all"
+                            onClick={() => {
+                              setPreviewProduct(product);
+                              setPreviewIndex(0);
+                              setImagePreviewOpen(true);
+                            }}
+                          >
                             {img
                               ? <img src={img} alt={product.name} className="w-full h-full object-cover" />
                               : <span className="text-[10px] text-muted-foreground">img</span>
@@ -413,6 +435,24 @@ export default function ProductsPage() {
                         </TableCell>
                         <TableCell>
                           <Badge className={statusColor(status)}>{statusLabel(status)}</Badge>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <div
+                            className="inline-block cursor-pointer hover:ring-2 hover:ring-blue-400 rounded p-0.5 transition-all"
+                            onClick={() => { setQrProduct(product); setQrDialogOpen(true); }}
+                          >
+                            <QRCodeSVG
+                              value={JSON.stringify({
+                                ref: product.reference,
+                                nom: product.name,
+                                marque: product.brand || '',
+                                cat: product.category || '',
+                                prix: product.shell_price,
+                                stock: product.initial_quantity ?? 0,
+                              })}
+                              size={36}
+                            />
+                          </div>
                         </TableCell>
                         {(canEdit || canDelete || isManager) && (
                           <TableCell>
@@ -518,6 +558,141 @@ export default function ProductsPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Image Preview Dialog */}
+      <Dialog open={imagePreviewOpen} onOpenChange={setImagePreviewOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{previewProduct?.name || 'Image du produit'}</DialogTitle>
+            <DialogDescription>
+              {previewProduct?.reference} — {previewProduct?.brand || ''}
+            </DialogDescription>
+          </DialogHeader>
+          {previewProduct && (() => {
+            const images = [
+              imageUrl(previewProduct.image1),
+              imageUrl(previewProduct.image2),
+              imageUrl(previewProduct.image3),
+            ].filter(Boolean) as string[];
+
+            if (images.length === 0) {
+              return (
+                <div className="text-center py-12 text-muted-foreground">
+                  <ImagePlus className="h-12 w-12 mx-auto mb-3" />
+                  <p>Aucune image disponible</p>
+                </div>
+              );
+            }
+
+            return (
+              <div className="space-y-4">
+                <div className="relative w-full aspect-square bg-muted rounded-lg overflow-hidden border">
+                  <img
+                    src={images[previewIndex]}
+                    alt={`${previewProduct.name} - Image ${previewIndex + 1}`}
+                    className="w-full h-full object-contain"
+                  />
+                  <Badge className="absolute top-2 right-2 bg-black/60 text-white">
+                    {previewIndex + 1} / {images.length}
+                  </Badge>
+                </div>
+                {images.length > 1 && (
+                  <div className="flex justify-center gap-2">
+                    {images.map((src, i) => (
+                      <button
+                        key={i}
+                        className={`w-16 h-16 rounded-lg overflow-hidden border-2 transition-all ${
+                          i === previewIndex ? 'border-blue-500 ring-2 ring-blue-300' : 'border-muted hover:border-muted-foreground/50'
+                        }`}
+                        onClick={() => setPreviewIndex(i)}
+                      >
+                        <img src={src} alt={`Miniature ${i + 1}`} className="w-full h-full object-cover" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* QR Code Dialog */}
+      <Dialog open={qrDialogOpen} onOpenChange={setQrDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>QR Code — {qrProduct?.name}</DialogTitle>
+            <DialogDescription>Scannez ce code pour obtenir les informations du produit</DialogDescription>
+          </DialogHeader>
+          {qrProduct && (
+            <div className="space-y-4">
+              <div className="flex justify-center p-6 bg-white rounded-lg border">
+                <QRCodeSVG
+                  value={JSON.stringify({
+                    ref: qrProduct.reference,
+                    nom: qrProduct.name,
+                    marque: qrProduct.brand || '',
+                    categorie: qrProduct.category || '',
+                    prix_vente: qrProduct.shell_price,
+                    stock: qrProduct.initial_quantity ?? 0,
+                    magasin: qrProduct.shop_name || '',
+                  })}
+                  size={220}
+                  level="M"
+                  includeMargin
+                />
+              </div>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between"><span className="text-muted-foreground">Référence</span><span className="font-mono font-medium">{qrProduct.reference}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Nom</span><span className="font-medium">{qrProduct.name}</span></div>
+                {qrProduct.brand && <div className="flex justify-between"><span className="text-muted-foreground">Marque</span><span>{qrProduct.brand}</span></div>}
+                <div className="flex justify-between"><span className="text-muted-foreground">Catégorie</span><span>{qrProduct.category}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Prix vente</span><span className="font-medium">{Number(qrProduct.shell_price || 0).toLocaleString('fr-MG')} Ar</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Stock</span><span>{qrProduct.initial_quantity ?? 0} unités</span></div>
+              </div>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  const svg = document.querySelector('#qr-download-svg svg');
+                  if (!svg) return;
+                  const svgData = new XMLSerializer().serializeToString(svg);
+                  const canvas = document.createElement('canvas');
+                  canvas.width = 300; canvas.height = 300;
+                  const ctx = canvas.getContext('2d');
+                  const img = new Image();
+                  img.onload = () => {
+                    ctx?.drawImage(img, 0, 0, 300, 300);
+                    const a = document.createElement('a');
+                    a.download = `qr-${qrProduct.reference}.png`;
+                    a.href = canvas.toDataURL('image/png');
+                    a.click();
+                  };
+                  img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
+                }}
+              >
+                <Download className="h-4 w-4 mr-2" />Télécharger le QR Code
+              </Button>
+              <div id="qr-download-svg" className="hidden">
+                <QRCodeSVG
+                  value={JSON.stringify({
+                    ref: qrProduct.reference,
+                    nom: qrProduct.name,
+                    marque: qrProduct.brand || '',
+                    categorie: qrProduct.category || '',
+                    prix_vente: qrProduct.shell_price,
+                    stock: qrProduct.initial_quantity ?? 0,
+                    magasin: qrProduct.shop_name || '',
+                  })}
+                  size={300}
+                  level="M"
+                  includeMargin
+                />
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -526,11 +701,12 @@ interface ProductFormProps {
   form: any; setForm: (v: any) => void; isAdmin: boolean;
   stores?: any[]; storesLoading?: boolean;
   imageFile: File | null; setImageFile: (f: File | null) => void;
+  imageFiles?: (File | null)[]; setImageFiles?: (files: (File | null)[]) => void;
   onSubmit: () => void; onCancel: () => void;
   saving: boolean; submitLabel: string; hideImage?: boolean;
 }
 
-function ProductForm({ form, setForm, isAdmin, stores = [], storesLoading = false, imageFile, setImageFile, onSubmit, onCancel, saving, submitLabel, hideImage }: ProductFormProps) {
+function ProductForm({ form, setForm, isAdmin, stores = [], storesLoading = false, imageFile, setImageFile, imageFiles = [null, null, null], setImageFiles, onSubmit, onCancel, saving, submitLabel, hideImage }: ProductFormProps) {
   const [storeFilter, setStoreFilter] = useState('');
   const set = (key: string, value: any) => setForm((prev: any) => ({ ...prev, [key]: value }));
 
@@ -543,20 +719,43 @@ function ProductForm({ form, setForm, isAdmin, stores = [], storesLoading = fals
     <div className="space-y-5">
       {!hideImage && (
         <div className="space-y-2">
-          <Label>Image du produit</Label>
-          <div
-            className="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover:border-muted-foreground/50 transition-colors"
-            onClick={() => document.getElementById('prod-img-input')?.click()}
-          >
-            {imageFile ? (
-              <div className="flex items-center justify-center gap-2 text-sm">
-                <ImagePlus className="h-5 w-5 text-green-500" /><span>{imageFile.name}</span>
-                <button type="button" onClick={e => { e.stopPropagation(); setImageFile(null); }} className="text-red-500"><X className="h-4 w-4" /></button>
+          <Label>Images du produit (jusqu&apos;à 3)</Label>
+          <div className="grid grid-cols-3 gap-3">
+            {[0, 1, 2].map(idx => (
+              <div
+                key={idx}
+                className="border-2 border-dashed rounded-lg p-4 text-center cursor-pointer hover:border-muted-foreground/50 transition-colors"
+                onClick={() => document.getElementById(`prod-img-input-${idx}`)?.click()}
+              >
+                {imageFiles[idx] ? (
+                  <div className="flex flex-col items-center gap-1 text-xs">
+                    <ImagePlus className="h-5 w-5 text-green-500" />
+                    <span className="truncate max-w-full">{imageFiles[idx]!.name}</span>
+                    <button type="button" onClick={e => { e.stopPropagation(); if (setImageFiles) { const next = [...imageFiles]; next[idx] = null; setImageFiles(next); } }} className="text-red-500"><X className="h-3 w-3" /></button>
+                  </div>
+                ) : (
+                  <div>
+                    <Upload className="h-6 w-6 mx-auto text-muted-foreground mb-1" />
+                    <p className="text-[10px] text-muted-foreground">Image {idx + 1}</p>
+                  </div>
+                )}
+                <input
+                  id={`prod-img-input-${idx}`}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={e => {
+                    const file = e.target.files?.[0] ?? null;
+                    if (setImageFiles) {
+                      const next = [...imageFiles];
+                      next[idx] = file;
+                      setImageFiles(next);
+                    }
+                    if (idx === 0) setImageFile(file);
+                  }}
+                />
               </div>
-            ) : (
-              <><Upload className="h-8 w-8 mx-auto text-muted-foreground mb-2" /><p className="text-sm text-muted-foreground">Glissez ou cliquez</p></>
-            )}
-            <input id="prod-img-input" type="file" accept="image/*" className="hidden" onChange={e => setImageFile(e.target.files?.[0] ?? null)} />
+            ))}
           </div>
         </div>
       )}

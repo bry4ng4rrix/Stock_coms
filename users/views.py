@@ -72,6 +72,21 @@ class ApproveUserView(APIView):
             user = CustomUser.objects.get(id=user_id)
             user.is_confirmed = True
             user.save()
+            magasin = None
+            if user.role == 'employer':
+                emp = EmployerProfile.objects.filter(user=user).first()
+                if emp:
+                    magasin = emp.magasin
+            elif user.role == 'magasin':
+                mag = MagasinProfile.objects.filter(user=user).first()
+                if mag:
+                    magasin = mag
+            Notification.objects.create(
+                notif_type='user',
+                message=f"Utilisateur approuvé: {user.full_name} ({user.email}) par {current_user.full_name}",
+                magasin=magasin,
+                user=user,
+            )
             return Response({"message": "Utilisateur approuvé"})
         except CustomUser.DoesNotExist:
             return Response({"error": "Utilisateur introuvable"}, status=404)
@@ -416,6 +431,16 @@ class ProductViewSet(viewsets.ModelViewSet):
                     product=new_instance,
                     user=user
                 )
+
+            non_stock_fields = [f for f in changed_fields if not f.startswith("stock")]
+            if non_stock_fields and not ('initial_quantity' in request.data and new_qty != old_qty):
+                Notification.objects.create(
+                    notif_type='product',
+                    message=f"Mise à jour produit: {new_instance.name} — {', '.join(non_stock_fields)} par {user.full_name}",
+                    magasin=new_instance.magasin,
+                    product=new_instance,
+                    user=user
+                )
             return response
 
         if user.role == "magasin":
@@ -489,6 +514,12 @@ class ProductViewSet(viewsets.ModelViewSet):
             new_quantity=0,
             change=-(instance.initial_quantity or 0),
             note=f"Suppression produit par {request.user.full_name}"
+        )
+        Notification.objects.create(
+            notif_type='product',
+            message=f"Suppression du produit: {instance.name} ({instance.reference}) par {request.user.full_name}",
+            magasin=instance.magasin,
+            user=request.user,
         )
         return super().destroy(request, *args, **kwargs)
 
@@ -1088,6 +1119,11 @@ class DeleteUserView(APIView):
             user = CustomUser.objects.get(id=user_id)
             if user.id == request.user.id:
                 return Response({"error": "Vous ne pouvez pas vous supprimer vous-même"}, status=400)
+            Notification.objects.create(
+                notif_type='user',
+                message=f"Utilisateur supprimé: {user.full_name} ({user.email}) par {request.user.full_name}",
+                user=request.user,
+            )
             user.delete()
             return Response({"message": "Utilisateur supprimé"})
         except CustomUser.DoesNotExist:
@@ -1105,6 +1141,11 @@ class RejectUserView(APIView):
             return Response({"error": "Permission refusée"}, status=403)
         try:
             user = CustomUser.objects.get(id=user_id)
+            Notification.objects.create(
+                notif_type='user',
+                message=f"Utilisateur rejeté: {user.full_name} ({user.email}) par {request.user.full_name}",
+                user=request.user,
+            )
             user.delete()
             return Response({"message": "Utilisateur rejeté et supprimé"})
         except CustomUser.DoesNotExist:

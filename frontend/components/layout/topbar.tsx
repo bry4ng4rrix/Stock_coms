@@ -17,6 +17,7 @@ import { Moon, Sun, LogOut, User } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useCurrentUser } from '@/lib/auth/useCurrentUser';
 import { djangoClient } from '@/lib/django-client';
+import { Notifications } from '@/components/notifications';
 
 export function TopBar() {
   const router = useRouter();
@@ -54,6 +55,9 @@ export function TopBar() {
         <div className="flex-1" />
 
         <div className="flex items-center gap-3">
+          {/* Notifications */}
+          <Notifications />
+
           {/* Theme toggle */}
           <Button
             variant="ghost"
