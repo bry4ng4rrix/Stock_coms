@@ -10,8 +10,15 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { User, Lock, Building2 } from 'lucide-react';
+import { User, Lock, Building2, Loader2 } from 'lucide-react';
 
 const roleLabel: Record<string, string> = {
   admin: 'Administrateur',
@@ -30,12 +37,57 @@ export default function SettingsPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [changingPw, setChangingPw] = useState(false);
 
+  const [modalOpen, setModalOpen] = useState(false);
+  const [companyName, setCompanyName] = useState('');
+  const [shopName, setShopName] = useState('');
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [updatingDetails, setUpdatingDetails] = useState(false);
+
   useEffect(() => {
     if (user) {
       setFullName(user.full_name || '');
       setPhone(user.phone || '');
+      setCompanyName(user.company_name || '');
+      setShopName(user.shop_name || '');
     }
   }, [user]);
+
+  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setLogoFile(file);
+      setLogoPreview(URL.createObjectURL(file));
+    }
+  };
+
+  const handleUpdateDetails = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setUpdatingDetails(true);
+    try {
+      const formData = new FormData();
+      if (user?.role === 'admin') {
+        formData.append('company_name', companyName);
+        if (logoFile) {
+          formData.append('logo', logoFile);
+        }
+      } else if (user?.role === 'magasin') {
+        formData.append('shop_name', shopName);
+        if (logoFile) {
+          formData.append('shop_logo', logoFile);
+        }
+      }
+
+      await djangoClient.patchFormData('/users/me/', formData);
+      toast.success('Informations mises à jour avec succès');
+      setModalOpen(false);
+      window.location.reload();
+    } catch (err: any) {
+      toast.error(err.message || 'Erreur lors de la mise à jour');
+    } finally {
+      setUpdatingDetails(false);
+    }
+  };
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -141,18 +193,31 @@ export default function SettingsPage() {
                   />
                 </div>
                 {user?.role === 'magasin' && user.shop_name && (
-                  <div className="space-y-2">
+                  <div className="space-y-2 border-t pt-4">
                     <Label>Magasin</Label>
-                    <div className="flex items-center gap-2 text-sm">
-                      <Building2 className="h-4 w-4 text-muted-foreground" />
-                      <span>{user.shop_name}</span>
+                    <div className="flex items-center justify-between gap-2 p-3 border rounded-lg bg-slate-50/50">
+                      <div className="flex items-center gap-2 text-sm">
+                        <Building2 className="h-4 w-4 text-muted-foreground" />
+                        <span className="font-semibold">{user.shop_name}</span>
+                      </div>
+                      <Button type="button" variant="outline" size="sm" onClick={() => setModalOpen(true)}>
+                        Modifier
+                      </Button>
                     </div>
                   </div>
                 )}
                 {user?.role === 'admin' && user.company_name && (
-                  <div className="space-y-2">
+                  <div className="space-y-2 border-t pt-4">
                     <Label>Entreprise</Label>
-                    <Input value={user.company_name} disabled className="bg-muted" />
+                    <div className="flex items-center justify-between gap-2 p-3 border rounded-lg bg-slate-50/50">
+                      <div className="flex items-center gap-2 text-sm">
+                        <Building2 className="h-4 w-4 text-muted-foreground" />
+                        <span className="font-semibold">{user.company_name}</span>
+                      </div>
+                      <Button type="button" variant="outline" size="sm" onClick={() => setModalOpen(true)}>
+                        Modifier
+                      </Button>
+                    </div>
                   </div>
                 )}
                 <Button type="submit" disabled={saving}>
@@ -214,6 +279,66 @@ export default function SettingsPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {user?.role === 'admin' ? "Modifier l'entreprise" : "Modifier le magasin"}
+            </DialogTitle>
+            <DialogDescription>
+              {user?.role === 'admin' 
+                ? "Mettez à jour le nom et le logo de votre entreprise" 
+                : "Mettez à jour le nom et le logo de votre magasin"}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleUpdateDetails} className="space-y-4">
+            <div className="space-y-2">
+              <Label>
+                {user?.role === 'admin' ? "Nom de l'entreprise" : "Nom du magasin"}
+              </Label>
+              <Input
+                value={user?.role === 'admin' ? companyName : shopName}
+                onChange={(e) => user?.role === 'admin' ? setCompanyName(e.target.value) : setShopName(e.target.value)}
+                placeholder={user?.role === 'admin' ? "Nom de l'entreprise" : "Nom du magasin"}
+                required
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label>
+                {user?.role === 'admin' ? "Logo de l'entreprise" : "Logo du magasin"}
+              </Label>
+              <Input
+                type="file"
+                accept="image/*"
+                onChange={handleLogoChange}
+              />
+              {logoPreview && (
+                <div className="mt-2 flex justify-center">
+                  <img src={logoPreview} alt="Preview" className="h-20 w-20 object-contain rounded-md border" />
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-2 justify-end pt-4">
+              <Button type="button" variant="outline" onClick={() => setModalOpen(false)}>
+                Annuler
+              </Button>
+              <Button type="submit" disabled={updatingDetails}>
+                {updatingDetails ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Enregistrement...
+                  </>
+                ) : (
+                  'Enregistrer'
+                )}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

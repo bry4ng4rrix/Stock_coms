@@ -20,7 +20,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 
-import { Store, Users, RefreshCw, Loader2 } from 'lucide-react';
+import { Store, Users, RefreshCw, Loader2 ,Edit} from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function StoresPage() {
@@ -37,6 +37,13 @@ export default function StoresPage() {
   const [managerPassword, setManagerPassword] = useState('');
 
   const [submittingStore, setSubmittingStore] = useState(false);
+
+  const [editingStore, setEditingStore] = useState<any>(null);
+  const [isEditStoreDialogOpen, setIsEditStoreDialogOpen] = useState(false);
+  const [editStoreName, setEditStoreName] = useState('');
+  const [editStoreLogoFile, setEditStoreLogoFile] = useState<File | null>(null);
+  const [editStoreLogoPreview, setEditStoreLogoPreview] = useState<string | null>(null);
+  const [submittingEditStore, setSubmittingEditStore] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -111,6 +118,44 @@ export default function StoresPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  const handleStartEditStore = (store: any) => {
+    setEditingStore(store);
+    setEditStoreName(store.shop_name);
+    setEditStoreLogoFile(null);
+    setEditStoreLogoPreview(store.shop_logo || null);
+    setIsEditStoreDialogOpen(true);
+  };
+
+  const handleEditStoreLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setEditStoreLogoFile(file);
+      setEditStoreLogoPreview(URL.createObjectURL(file));
+    }
+  };
+
+  const handleUpdateStore = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingStore) return;
+    setSubmittingEditStore(true);
+    try {
+      const formData = new FormData();
+      formData.append('shop_name', editStoreName);
+      if (editStoreLogoFile) {
+        formData.append('shop_logo', editStoreLogoFile);
+      }
+      
+      await djangoClient.patchFormData(`/magasins/${editingStore.magasin_id}/`, formData);
+      toast.success('Magasin mis à jour avec succès');
+      setIsEditStoreDialogOpen(false);
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.message || 'Erreur lors de la mise à jour');
+    } finally {
+      setSubmittingEditStore(false);
+    }
+  };
 
   const handleRegisterStore = async (
     e: React.FormEvent
@@ -330,11 +375,20 @@ export default function StoresPage() {
               <Card
                 key={store.magasin_id}
               >
-                <CardHeader>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="flex items-center gap-2">
                     <Store className="h-5 w-5" />
                     {store.shop_name}
                   </CardTitle>
+                  {isAdmin && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleStartEditStore(store)}
+                    >
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                  )}
                 </CardHeader>
 
                 <CardContent className="space-y-4">
@@ -438,6 +492,60 @@ export default function StoresPage() {
           </div>
         )}
       </div>
+
+      <Dialog open={isEditStoreDialogOpen} onOpenChange={setIsEditStoreDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Modifier le magasin</DialogTitle>
+            <DialogDescription>
+              Modifier le nom et le logo du magasin.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleUpdateStore} className="space-y-4">
+            <div>
+              <Label>Nom du magasin</Label>
+              <Input
+                value={editStoreName}
+                onChange={(e) => setEditStoreName(e.target.value)}
+                required
+              />
+            </div>
+            
+            <div>
+              <Label>Logo du magasin</Label>
+              <Input
+                type="file"
+                accept="image/*"
+                onChange={handleEditStoreLogoChange}
+              />
+              {editStoreLogoPreview && (
+                <div className="mt-2 flex justify-center">
+                  <img
+                    src={editStoreLogoPreview}
+                    alt="Logo magasin"
+                    className="h-20 w-20 object-contain rounded-md border"
+                  />
+                </div>
+              )}
+            </div>
+
+            <Button
+              type="submit"
+              disabled={submittingEditStore}
+              className="w-full"
+            >
+              {submittingEditStore ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Enregistrement...
+                </>
+              ) : (
+                'Enregistrer'
+              )}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

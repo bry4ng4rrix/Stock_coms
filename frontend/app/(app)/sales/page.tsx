@@ -357,6 +357,49 @@ export default function SalesPage() {
     });
   };
 
+  const formatDueDate = (dateStr?: string) => {
+    if (!dateStr) return '—';
+    const parts = dateStr.split('T')[0].split('-');
+    if (parts.length === 3) {
+      const [year, month, day] = parts;
+      return `${day}/${month}/${year}`;
+    }
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return '—';
+    return date.toLocaleDateString('fr-FR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+  };
+
+  const renderPaymentDueDate = (sale: Sale) => {
+    if (sale.is_paid) return <span className="text-muted-foreground">—</span>;
+    if (!sale.payment_due_date) return <span className="text-muted-foreground">—</span>;
+
+    const formatted = formatDueDate(sale.payment_due_date);
+    
+    // Check if overdue
+    const dueDate = new Date(sale.payment_due_date);
+    dueDate.setHours(23, 59, 59, 999);
+    const today = new Date();
+    
+    const isOverdue = today > dueDate;
+    
+    if (isOverdue) {
+      const diffTime = Math.abs(today.getTime() - dueDate.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      return (
+        <div className="flex flex-col">
+          <span className="font-semibold text-red-600">{formatted}</span>
+          <span className="text-[10px] text-red-500 font-medium">Retard de {diffDays} j.</span>
+        </div>
+      );
+    }
+    
+    return <span className="font-medium text-amber-600">{formatted}</span>;
+  };
+
   const currentStock = selectedProduct?.initial_quantity ?? 0;
 
   return (
@@ -870,6 +913,7 @@ export default function SalesPage() {
                       Total
                     </TableHead>
                     <TableHead>Paiement</TableHead>
+                    <TableHead>Échéance</TableHead>
 
                     {isManager && (
                       <TableHead>Vendeur</TableHead>
@@ -923,6 +967,10 @@ export default function SalesPage() {
                             Non payé
                           </Badge>
                         )}
+                      </TableCell>
+
+                      <TableCell>
+                        {renderPaymentDueDate(sale)}
                       </TableCell>
 
                       {isManager && (

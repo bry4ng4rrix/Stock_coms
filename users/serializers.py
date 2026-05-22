@@ -189,3 +189,10 @@ class NotificationSerializer(serializers.ModelSerializer):
         model = Notification
         fields = ["id", "notif_type", "message", "magasin", "magasin_name", "product", "product_name", "sale", "sale_id", "user", "user_name", "is_read", "created_at"]
         read_only_fields = ["id", "created_at"]
+
+
+class MagasinProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MagasinProfile
+        fields = ["id", "shop_name", "shop_logo", "admin", "user"]
+        read_only_fields = ["id", "admin", "user"]

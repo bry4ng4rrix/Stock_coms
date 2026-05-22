@@ -9,7 +9,7 @@ from django.utils import timezone
 from datetime import timedelta
 
 from .models import CustomUser, Product, MagasinProfile, Sale, EmployerProfile, AdminProfile, Movement
-from .serializers import RegisterSerializer, ProductSerializer, SaleSerializer, MovementSerializer, NotificationSerializer
+from .serializers import RegisterSerializer, ProductSerializer, SaleSerializer, MovementSerializer, NotificationSerializer, MagasinProfileSerializer
 from .permissions import IsAdmin
 from rest_framework_simplejwt.views import TokenViewBase
 from .authentication import CustomTokenObtainPairSerializer
@@ -110,6 +110,7 @@ class Myprofile(APIView):
             try:
                 p = user.admin_profile
                 data["company_name"] = p.company_name
+                data["logo"] = request.build_absolute_uri(p.logo.url) if p.logo else None
             except AdminProfile.DoesNotExist:
                 pass
         elif user.role == "magasin":
@@ -117,6 +118,7 @@ class Myprofile(APIView):
                 p = user.magasin_profile
                 data["shop_name"] = p.shop_name
                 data["magasin_id"] = p.id
+                data["shop_logo"] = request.build_absolute_uri(p.shop_logo.url) if p.shop_logo else None
             except Exception:
                 pass
         elif user.role == "employer":
@@ -126,6 +128,7 @@ class Myprofile(APIView):
                 if p.magasin:
                     data["magasin_id"] = p.magasin.id
                     data["shop_name"] = p.magasin.shop_name
+                    data["shop_logo"] = request.build_absolute_uri(p.magasin.shop_logo.url) if p.magasin.shop_logo else None
             except Exception:
                 pass
         return Response(data)
@@ -139,6 +142,33 @@ class Myprofile(APIView):
         if phone is not None:
             user.phone = phone
         user.save()
+
+        if user.role == "admin":
+            company_name = request.data.get("company_name")
+            logo = request.data.get("logo")
+            try:
+                p = user.admin_profile
+            except AdminProfile.DoesNotExist:
+                p = AdminProfile(user=user)
+            if company_name is not None:
+                p.company_name = company_name
+            if logo is not None and not isinstance(logo, str):
+                p.logo = logo
+            p.save()
+        elif user.role == "magasin":
+            shop_name = request.data.get("shop_name")
+            shop_logo = request.data.get("shop_logo")
+            try:
+                p = user.magasin_profile
+            except MagasinProfile.DoesNotExist:
+                p = None
+            if p:
+                if shop_name is not None:
+                    p.shop_name = shop_name
+                if shop_logo is not None and not isinstance(shop_logo, str):
+                    p.shop_logo = shop_logo
+                p.save()
+
         return Response({"message": "Profil mis à jour"})
 
 # =========================
@@ -645,6 +675,7 @@ class UsersByMagasinView(APIView):
             response_data.append({
                 "magasin_id": mag.id,
                 "shop_name": mag.shop_name,
+                "shop_logo": request.build_absolute_uri(mag.shop_logo.url) if mag.shop_logo else None,
                 "manager": manager_data,
                 "employers": employers_list
             })
@@ -1140,3 +1171,36 @@ class RejectUserView(APIView):
             return Response({"message": "Utilisateur rejeté et supprimé"})
         except CustomUser.DoesNotExist:
             return Response({"error": "Utilisateur introuvable"}, status=404)
+
+
+# =========================
+# MAGASIN VIEWSET
+# =========================
+class MagasinViewSet(viewsets.ModelViewSet):
+    serializer_class = MagasinProfileSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.role == "admin":
+            return MagasinProfile.objects.filter(admin=user)
+        elif user.role == "magasin":
+            return MagasinProfile.objects.filter(user=user)
+        return MagasinProfile.objects.none()
+
+    def perform_create(self, serializer):
+        if self.request.user.role != "admin":
+            raise serializers.ValidationError("Seul l'admin peut créer un magasin.")
+        serializer.save(admin=self.request.user)
+
+    def partial_update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        shop_name = request.data.get("shop_name")
+        shop_logo = request.data.get("shop_logo")
+        if shop_name is not None:
+            instance.shop_name = shop_name
+        if shop_logo is not None and not isinstance(shop_logo, str):
+            instance.shop_logo = shop_logo
+        instance.save()
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
