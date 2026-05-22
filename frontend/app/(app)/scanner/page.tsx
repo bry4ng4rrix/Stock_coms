@@ -77,7 +77,7 @@ export default function ScannerPage() {
   }, [query]);
   
 
-  }, [query, search]);
+
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
