@@ -14,6 +14,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import {
   Plus, Download, Pencil, Trash2, X, ImagePlus, Upload, Loader2, AlertTriangle,
+  ChevronLeft, ChevronRight, QrCode,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useCurrentUser } from '@/lib/auth/useCurrentUser';
@@ -24,6 +25,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import * as XLSX from 'xlsx';
+import { QRCodeSVG } from 'qrcode.react';
 
 const MEDIA_BASE = (process.env.NEXT_PUBLIC_DJANGO_API_URL || 'http://localhost:8000/api')
   .replace('/api', '');
@@ -98,6 +100,30 @@ export default function ProductsPage() {
   const [addingProduct, setAddingProduct] = useState<any>(null);
   const [addAmount, setAddAmount] = useState<number | string>(0);
   const [addLoading, setAddLoading] = useState(false);
+
+  const [imageViewerOpen, setImageViewerOpen] = useState(false);
+  const [viewerImages, setViewerImages] = useState<string[]>([]);
+  const [viewerIndex, setViewerIndex] = useState(0);
+  const [viewerProductName, setViewerProductName] = useState('');
+
+  const [qrDialogOpen, setQrDialogOpen] = useState(false);
+  const [qrProduct, setQrProduct] = useState<any>(null);
+
+  const openImageViewer = (product: any) => {
+    const imgs = [product.image1, product.image2, product.image3]
+      .map(imageUrl)
+      .filter((u): u is string => !!u);
+    if (imgs.length === 0) return;
+    setViewerImages(imgs);
+    setViewerIndex(0);
+    setViewerProductName(product.name);
+    setImageViewerOpen(true);
+  };
+
+  const openQrDialog = (product: any) => {
+    setQrProduct(product);
+    setQrDialogOpen(true);
+  };
 
   const expiringProducts = products
     .filter(p => p.expiry_date)
@@ -352,6 +378,7 @@ export default function ProductsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-14">Image</TableHead>
+                    <TableHead className="w-14">QR</TableHead>
                     <TableHead>Référence</TableHead>
                     <TableHead>Nom</TableHead>
                     <TableHead>Catégorie</TableHead>
@@ -367,7 +394,7 @@ export default function ProductsPage() {
                 <TableBody>
                   {filteredProducts.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">Aucun produit trouvé</TableCell>
+                      <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">Aucun produit trouvé</TableCell>
                     </TableRow>
                   ) : filteredProducts.map(product => {
                     const status = getStatus(product);
@@ -376,11 +403,33 @@ export default function ProductsPage() {
                     return (
                       <TableRow key={product.id}>
                         <TableCell>
-                          <div className="w-10 h-10 rounded overflow-hidden bg-muted border flex-shrink-0 flex items-center justify-center">
+                          <div
+                            className="w-10 h-10 rounded overflow-hidden bg-muted border flex-shrink-0 flex items-center justify-center cursor-pointer hover:ring-2 hover:ring-primary transition-all"
+                            onClick={() => openImageViewer(product)}
+                            title="Cliquer pour agrandir"
+                          >
                             {img
                               ? <img src={img} alt={product.name} className="w-full h-full object-cover" />
                               : <span className="text-[10px] text-muted-foreground">img</span>
                             }
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div
+                            className="w-10 h-10 rounded bg-white border flex-shrink-0 flex items-center justify-center cursor-pointer hover:ring-2 hover:ring-primary transition-all p-0.5"
+                            onClick={() => openQrDialog(product)}
+                            title="Voir le QR Code"
+                          >
+                            <QRCodeSVG
+                              value={JSON.stringify({
+                                ref: product.reference,
+                                nom: product.name,
+                                prix: product.shell_price,
+                                stock: product.initial_quantity,
+                              })}
+                              size={32}
+                              level="L"
+                            />
                           </div>
                         </TableCell>
                         <TableCell className="font-mono text-sm">{product.reference}</TableCell>
@@ -516,6 +565,103 @@ export default function ProductsPage() {
               }} disabled={addLoading}>{addLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : 'Ajouter'}</Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Image Viewer Dialog */}
+      <Dialog open={imageViewerOpen} onOpenChange={setImageViewerOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{viewerProductName}</DialogTitle>
+            <DialogDescription>
+              Image {viewerIndex + 1} / {viewerImages.length}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="relative flex items-center justify-center min-h-[300px]">
+            {viewerImages.length > 0 && (
+              <img
+                src={viewerImages[viewerIndex]}
+                alt={`${viewerProductName} - ${viewerIndex + 1}`}
+                className="max-h-[60vh] max-w-full object-contain rounded-lg"
+              />
+            )}
+            {viewerImages.length > 1 && (
+              <>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="absolute left-2 top-1/2 -translate-y-1/2"
+                  onClick={() => setViewerIndex(i => (i - 1 + viewerImages.length) % viewerImages.length)}
+                >
+                  <ChevronLeft className="h-5 w-5" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="absolute right-2 top-1/2 -translate-y-1/2"
+                  onClick={() => setViewerIndex(i => (i + 1) % viewerImages.length)}
+                >
+                  <ChevronRight className="h-5 w-5" />
+                </Button>
+              </>
+            )}
+          </div>
+          {viewerImages.length > 1 && (
+            <div className="flex justify-center gap-2 mt-2">
+              {viewerImages.map((img, i) => (
+                <div
+                  key={i}
+                  className={`w-16 h-16 rounded border-2 overflow-hidden cursor-pointer transition-all ${
+                    i === viewerIndex ? 'border-primary ring-2 ring-primary/30' : 'border-muted hover:border-primary/50'
+                  }`}
+                  onClick={() => setViewerIndex(i)}
+                >
+                  <img src={img} alt={`Miniature ${i + 1}`} className="w-full h-full object-cover" />
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* QR Code Dialog */}
+      <Dialog open={qrDialogOpen} onOpenChange={setQrDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <QrCode className="h-5 w-5" /> QR Code — {qrProduct?.name}
+            </DialogTitle>
+            <DialogDescription>
+              Scannez ce code pour voir les informations du produit
+            </DialogDescription>
+          </DialogHeader>
+          {qrProduct && (
+            <div className="flex flex-col items-center gap-4 py-4">
+              <div className="bg-white p-4 rounded-lg">
+                <QRCodeSVG
+                  value={JSON.stringify({
+                    ref: qrProduct.reference,
+                    nom: qrProduct.name,
+                    marque: qrProduct.brand || '',
+                    categorie: qrProduct.category || '',
+                    prix_vente: qrProduct.shell_price,
+                    stock: qrProduct.initial_quantity,
+                    magasin: qrProduct.shop_name || '',
+                  })}
+                  size={200}
+                  level="M"
+                  includeMargin
+                />
+              </div>
+              <div className="text-sm text-center space-y-1">
+                <p><span className="font-semibold">Réf:</span> {qrProduct.reference}</p>
+                <p><span className="font-semibold">Nom:</span> {qrProduct.name}</p>
+                {qrProduct.brand && <p><span className="font-semibold">Marque:</span> {qrProduct.brand}</p>}
+                <p><span className="font-semibold">Prix vente:</span> {Number(qrProduct.shell_price || 0).toLocaleString('fr-MG')} Ar</p>
+                <p><span className="font-semibold">Stock:</span> {qrProduct.initial_quantity ?? 0}</p>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
