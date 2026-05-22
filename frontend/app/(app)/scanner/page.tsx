@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import dynamic from 'next/dynamic';
+import { useEffect, useState, useRef } from 'react';
 import { djangoClient } from '@/lib/django-client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -8,6 +9,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { QrCode, Search, Package } from 'lucide-react';
 import { toast } from 'sonner';
+
+const QrScanner = dynamic(() => import('@yudiel/react-qr-scanner'), { ssr: false });
 
 const MEDIA_BASE = (process.env.NEXT_PUBLIC_DJANGO_API_URL || 'http://localhost:8000/api')
   .replace('/api', '');
@@ -17,23 +20,63 @@ export default function ScannerPage() {
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [scanning, setScanning] = useState(false);
+  const [scannedProduct, setScannedProduct] = useState<any>(null);
 
-  const search = useCallback(async (q: string) => {
-    if (!q.trim()) { setResults([]); return; }
-    setLoading(true);
+  const startScanning = () => setScanning(true);
+  const stopScanning = () => setScanning(false);
+
+  const fetchProductById = async (id: string) => {
     try {
+      const product = await djangoClient.products.getById(Number(id));
+      setScannedProduct(product);
+      setResults([product]);
+    } catch (err: any) {
+      toast.error(err.message || 'Produit introuvable');
+    }
+  };
+
+  const handleScan = (result: any) => {
+    if (result?.text) {
+      setScanning(false);
+      fetchProductById(result.text);
+    }
+  };
+
+
+
+  const addToCart = async (product: any) => {
+    try {
+      await djangoClient.post('/users/cart/', { product_id: product.id, quantity: 1 });
+      toast.success('Produit ajouté au panier');
+    } catch (err: any) {
+      toast.error(err.message || "Erreur d'ajout au panier");
+    }
+  };
+
+// Search products by query string
+  const search = async (q: string) => {
+    if (!q) {
+      setResults([]);
+      return;
+    }
+    try {
+      setLoading(true);
       const data = await djangoClient.products.search(q);
       setResults(data);
     } catch (err: any) {
-      toast.error(err.message || 'Erreur de recherche');
+      toast.error(err.message || 'Erreur lors de la recherche');
     } finally {
       setLoading(false);
     }
-  }, []);
+  };
 
   useEffect(() => {
     const timer = setTimeout(() => search(query), 350);
     return () => clearTimeout(timer);
+  }, [query]);
+  
+
   }, [query, search]);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
@@ -64,9 +107,21 @@ export default function ScannerPage() {
           className="pl-10"
         />
       </div>
+      <div className="my-2">
+        <Button onClick={startScanning} className="w-full">
+          Scanner le QR code
+        </Button>
+      </div>
+      {scanning && (
+        <QrScanner
+          onDecode={handleScan}
+          constraints={{ facingMode: 'environment' }}
+          style={{ width: '100%' }}
+        />
+      )}
 
       {/* Results */}
-      {query && (
+      {(query || results.length > 0) && (
         loading ? (
           <p className="text-muted-foreground text-sm">Recherche...</p>
         ) : results.length === 0 ? (
@@ -110,6 +165,9 @@ export default function ScannerPage() {
                         <p className="text-muted-foreground text-xs">Prix vente</p>
                         <p className="font-medium">{new Intl.NumberFormat('fr-MG').format(p.shell_price)} Ar</p>
                       </div>
+                      <Button onClick={() => addToCart(p)} className="mt-2 w-full">
+                        Ajouter au panier
+                      </Button>
                       {p.expiry_date && (
                         <div>
                           <p className="text-muted-foreground text-xs">Expiration</p>
