@@ -406,12 +406,9 @@ class ProductViewSet(viewsets.ModelViewSet):
             if changed_fields:
                 movement_data['note'] = f"Mise à jour produit par {user.full_name} : {', '.join(changed_fields)}"
                 Movement.objects.create(**movement_data)
-
-            if 'initial_quantity' in request.data and new_qty != old_qty:
-                movement_type = 'Entrée' if new_qty > old_qty else 'Sortie'
                 Notification.objects.create(
                     notif_type='product',
-                    message=f"{movement_type} de stock: {new_instance.name} {new_qty - old_qty:+} unités par {user.full_name}",
+                    message=f"Mise à jour produit: {new_instance.name} ({', '.join(changed_fields)}) par {user.full_name}",
                     magasin=new_instance.magasin,
                     product=new_instance,
                     user=user
@@ -489,6 +486,13 @@ class ProductViewSet(viewsets.ModelViewSet):
             new_quantity=0,
             change=-(instance.initial_quantity or 0),
             note=f"Suppression produit par {request.user.full_name}"
+        )
+        Notification.objects.create(
+            notif_type='product',
+            message=f"Suppression de produit: {instance.name} par {request.user.full_name}",
+            magasin=instance.magasin,
+            product=instance,
+            user=request.user
         )
         return super().destroy(request, *args, **kwargs)
 

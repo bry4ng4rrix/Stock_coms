@@ -458,6 +458,16 @@ class DjangoAPIClient {
     },
   }
 
+  // ==================== Notifications Service ====================
+  notifications = {
+    list: async () => this.get<any[]>('/users/notifications/'),
+    markRead: async (id: number, isRead: boolean) => this.patch<any>(`/users/notifications/${id}/`, { is_read: isRead }),
+    markAllRead: async () => this.post<any>('/users/notifications/mark-all-read/'),
+    deleteAll: async () => this.post<any>('/users/notifications/delete-all/'),
+    bulkRead: async (ids: number[]) => this.post<any>('/users/notifications/bulk-read/', { ids }),
+    bulkDelete: async (ids: number[]) => this.post<any>('/users/notifications/bulk-delete/', { ids }),
+  }
+
   // ==================== Users Service ====================
   users = {
     list: async (role?: string) => {

@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, DragEvent } from 'react';
+import Link from 'next/link';
 import { djangoClient } from '@/lib/django-client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,9 +14,10 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import {
-  Plus, Download, Pencil, Trash2, X, ImagePlus, Upload, Loader2, AlertTriangle,
+  Plus, Download, Pencil, Trash2, X, ImagePlus, Upload, Loader2, AlertTriangle, QrCode,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { generateSimpleQRCode } from '@/lib/qrcode-generator';
 import { useCurrentUser } from '@/lib/auth/useCurrentUser';
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
@@ -66,6 +68,10 @@ const EMPTY_FORM = {
   reference: '', name: '', brand: '', description: '', category: '',
   shell_price: '', unit_price: '', magasin: '', initial_quantity: '0', alert_threshold: '5',
   expiry_date: '',
+  image1: null,
+  image2: null,
+  image3: null,
+  qr_code: null,
 };
 
 export default function ProductsPage() {
@@ -84,8 +90,9 @@ export default function ProductsPage() {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState({ ...EMPTY_FORM });
-  const [imageFile, setImageFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
+  const [previewProduct, setPreviewProduct] = useState<any | null>(null);
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
 
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);
@@ -203,12 +210,18 @@ export default function ProductsPage() {
       if (isAdmin && form.magasin) {
         fd.append('magasin', String(form.magasin));
       }
-      if (imageFile) fd.append('image1', imageFile);
+      const image1File = form.image1 as File | null;
+      const image2File = form.image2 as File | null;
+      const image3File = form.image3 as File | null;
+      const qrCodeFile = form.qr_code as File | null;
+      if (image1File instanceof File) fd.append('image1', image1File);
+      if (image2File instanceof File) fd.append('image2', image2File);
+      if (image3File instanceof File) fd.append('image3', image3File);
+      if (qrCodeFile instanceof File) fd.append('qr_code', qrCodeFile);
 
       await djangoClient.postFormData('/users/products/', fd);
       toast.success('Produit ajouté avec succès');
       setForm({ ...EMPTY_FORM });
-      setImageFile(null);
       setDialogOpen(false);
       await fetchData();
     } catch (err: any) {
@@ -233,6 +246,14 @@ export default function ProductsPage() {
       if (editingProduct.description) fd.append('description', editingProduct.description);
       if (editingProduct.expiry_date) fd.append('expiry_date', editingProduct.expiry_date);
       if (editingProduct.unit_price) fd.append('unit_price', String(editingProduct.unit_price));
+      const editImage1File = editingProduct.image1 as File | null;
+      const editImage2File = editingProduct.image2 as File | null;
+      const editImage3File = editingProduct.image3 as File | null;
+      const editQrCodeFile = editingProduct.qr_code as File | null;
+      if (editImage1File instanceof File) fd.append('image1', editImage1File);
+      if (editImage2File instanceof File) fd.append('image2', editImage2File);
+      if (editImage3File instanceof File) fd.append('image3', editImage3File);
+      if (editQrCodeFile instanceof File) fd.append('qr_code', editQrCodeFile);
 
       await djangoClient.patchFormData(`/users/products/${editingProduct.id}/`, fd);
       toast.success('Produit modifié');
@@ -272,6 +293,11 @@ export default function ProductsPage() {
           <Button variant="outline" size="sm" onClick={handleExportExcel}>
             <Download className="h-4 w-4 mr-2" />Exporter
           </Button>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/scanner">
+              <QrCode className="h-4 w-4 mr-2" />Scanner QR
+            </Link>
+          </Button>
           {canCreate && (
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
               <DialogTrigger asChild>
@@ -282,7 +308,6 @@ export default function ProductsPage() {
                 <ProductForm
                   form={form} setForm={setForm} isAdmin={isAdmin}
                   stores={stores} storesLoading={storesLoading}
-                  imageFile={imageFile} setImageFile={setImageFile}
                   onSubmit={handleAddProduct} onCancel={() => setDialogOpen(false)}
                   saving={saving} submitLabel="Ajouter"
                 />
@@ -296,7 +321,7 @@ export default function ProductsPage() {
       {expiringProducts.length > 0 && (
         <div className="rounded-lg border border-orange-300 bg-orange-50 dark:bg-orange-950/20 p-4">
           <div className="flex items-start gap-3">
-            <AlertTriangle className="h-5 w-5 text-orange-500 flex-shrink-0 mt-0.5" />
+            <AlertTriangle className="h-5 w-5 text-orange-500 shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
               <p className="font-semibold text-orange-800 dark:text-orange-300">
                 {expiringProducts.filter(p => p.expiryInfo.days < 0).length > 0
@@ -308,7 +333,7 @@ export default function ProductsPage() {
                   <li key={p.id} className="text-sm text-orange-700 flex items-center gap-2">
                     <span className="font-mono text-xs bg-orange-100 px-1 rounded">{p.reference}</span>
                     <span className="font-medium truncate">{p.name}</span>
-                    <span className="flex-shrink-0 text-xs font-semibold px-1.5 py-0.5 rounded ${p.expiryInfo.cls}">
+                    <span className={`shrink-0 text-xs font-semibold px-1.5 py-0.5 rounded ${p.expiryInfo.cls}`}>
                       {p.expiryInfo.days < 0 ? 'PÉRIMÉ' : `expire le ${fmtDate(p.expiry_date)}`}
                     </span>
                   </li>
@@ -359,15 +384,16 @@ export default function ProductsPage() {
                     <TableHead className="text-right">Prix vente</TableHead>
                     {isAdmin && <TableHead>Magasin</TableHead>}
                     {isAdmin && <TableHead className="text-right">Prix achat</TableHead>}
+                    <TableHead>QR Code</TableHead>
                     <TableHead>Péremption</TableHead>
                     <TableHead>Statut</TableHead>
-                    {(canEdit || canDelete) && <TableHead>Actions</TableHead>}
+                    {(canEdit || canDelete || isManager) && <TableHead>Actions</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredProducts.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">Aucun produit trouvé</TableCell>
+                      <TableCell colSpan={12} className="text-center py-8 text-muted-foreground">Aucun produit trouvé</TableCell>
                     </TableRow>
                   ) : filteredProducts.map(product => {
                     const status = getStatus(product);
@@ -376,12 +402,20 @@ export default function ProductsPage() {
                     return (
                       <TableRow key={product.id}>
                         <TableCell>
-                          <div className="w-10 h-10 rounded overflow-hidden bg-muted border flex-shrink-0 flex items-center justify-center">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const firstImage = img || imageUrl(product.image2) || imageUrl(product.image3) || imageUrl(product.qr_code);
+                              setPreviewProduct(product);
+                              setPreviewImageUrl(firstImage);
+                            }}
+                            className="group inline-flex w-10 h-10 rounded overflow-hidden bg-muted border shrink-0 items-center justify-center transition hover:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          >
                             {img
                               ? <img src={img} alt={product.name} className="w-full h-full object-cover" />
                               : <span className="text-[10px] text-muted-foreground">img</span>
                             }
-                          </div>
+                          </button>
                         </TableCell>
                         <TableCell className="font-mono text-sm">{product.reference}</TableCell>
                         <TableCell>
@@ -403,6 +437,19 @@ export default function ProductsPage() {
                             {product.unit_price != null ? `${Number(product.unit_price).toLocaleString('fr-MG')} Ar` : '—'}
                           </TableCell>
                         )}
+                        <TableCell>
+                          {product.qr_code ? (
+                            <div className="w-10 h-10 rounded overflow-hidden border bg-muted">
+                              <img
+                                src={imageUrl(product.qr_code) || ''}
+                                alt={`${product.name} QR code`}
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
+                          ) : (
+                            <span className="text-[10px] text-muted-foreground">N/A</span>
+                          )}
+                        </TableCell>
                         <TableCell>
                           {expiry ? (
                             <div className="flex items-center gap-1">
@@ -453,9 +500,8 @@ export default function ProductsPage() {
           {editingProduct && (
             <ProductForm
               form={editingProduct} setForm={setEditingProduct} isAdmin={isAdmin}
-              imageFile={null} setImageFile={() => {}}
               onSubmit={handleUpdateProduct} onCancel={() => setEditDialogOpen(false)}
-              saving={editSaving} submitLabel="Enregistrer" hideImage
+              saving={editSaving} submitLabel="Enregistrer"
             />
           )}
         </DialogContent>
@@ -518,6 +564,69 @@ export default function ProductsPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={Boolean(previewProduct)} onOpenChange={(open) => {
+        if (!open) {
+          setPreviewProduct(null);
+          setPreviewImageUrl(null);
+        }
+      }}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Prévisualisation des images</DialogTitle>
+            <DialogDescription>{previewProduct?.name}</DialogDescription>
+          </DialogHeader>
+          {previewProduct && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="rounded-xl border bg-white p-4">
+                  {previewImageUrl ? (
+                    <img
+                      src={previewImageUrl}
+                      alt={previewProduct.name}
+                      className="w-full max-h-96 object-contain rounded-lg"
+                    />
+                  ) : (
+                    <div className="flex h-96 items-center justify-center text-muted-foreground">Aucune image disponible</div>
+                  )}
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-sm font-semibold">Images disponibles</h3>
+                    <div className="grid grid-cols-3 gap-3 mt-3">
+                      {[
+                        { label: 'Principale', url: imageUrl(previewProduct.image1) },
+                        { label: 'Secondaire 1', url: imageUrl(previewProduct.image2) },
+                        { label: 'Secondaire 2', url: imageUrl(previewProduct.image3) },
+                        { label: 'QR Code', url: imageUrl(previewProduct.qr_code) },
+                      ].filter(item => item.url).map((item) => (
+                        <button
+                          key={item.label}
+                          type="button"
+                          onClick={() => setPreviewImageUrl(item.url)}
+                          className="rounded-lg border border-slate-300 overflow-hidden focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          <img src={item.url!} alt={item.label} className="h-24 w-full object-cover" />
+                          <div className="px-2 py-1 text-center text-xs text-muted-foreground">{item.label}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                    <p><strong>Nom:</strong> {previewProduct.name}</p>
+                    <p><strong>Réf:</strong> {previewProduct.reference}</p>
+                    <p><strong>Catégorie:</strong> {previewProduct.category}</p>
+                    {previewProduct.magasin?.shop_name && <p><strong>Magasin:</strong> {previewProduct.magasin.shop_name}</p>}
+                  </div>
+                  <div className="flex justify-end">
+                    <Button variant="outline" onClick={() => { setPreviewProduct(null); setPreviewImageUrl(null); }}>Fermer</Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -525,43 +634,145 @@ export default function ProductsPage() {
 interface ProductFormProps {
   form: any; setForm: (v: any) => void; isAdmin: boolean;
   stores?: any[]; storesLoading?: boolean;
-  imageFile: File | null; setImageFile: (f: File | null) => void;
   onSubmit: () => void; onCancel: () => void;
-  saving: boolean; submitLabel: string; hideImage?: boolean;
+  saving: boolean; submitLabel: string;
 }
 
-function ProductForm({ form, setForm, isAdmin, stores = [], storesLoading = false, imageFile, setImageFile, onSubmit, onCancel, saving, submitLabel, hideImage }: ProductFormProps) {
+function ProductForm({ form, setForm, isAdmin, stores = [], storesLoading = false, onSubmit, onCancel, saving, submitLabel }: ProductFormProps) {
   const [storeFilter, setStoreFilter] = useState('');
   const set = (key: string, value: any) => setForm((prev: any) => ({ ...prev, [key]: value }));
+
+  const dataURLtoFile = (dataUrl: string, filename: string) => {
+    const arr = dataUrl.split(',');
+    const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/png';
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new File([u8arr], filename, { type: mime });
+  };
+
+  const handleDropImages = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const files = Array.from(event.dataTransfer.files).filter((file) => file.type.startsWith('image/'));
+    if (files.length === 0) return;
+    set('image2', files[0]);
+    if (files[1]) set('image3', files[1]);
+    toast.success(`${Math.min(files.length, 2)} image(s) ajoutée(s)`);
+  };
+
+  const handleGenerateQr = async () => {
+    const qrSource = form.reference || form.name;
+    if (!qrSource) {
+      toast.error('Veuillez renseigner la référence ou le nom du produit pour générer un QR code.');
+      return;
+    }
+    try {
+      const dataUrl = await generateSimpleQRCode(qrSource);
+      const qrFile = dataURLtoFile(dataUrl, `qr-${qrSource.replace(/\s+/g, '-')}.png`);
+      set('qr_code', qrFile);
+      toast.success('QR code généré');
+    } catch (err: any) {
+      console.error(err);
+      toast.error('Impossible de générer le QR code.');
+    }
+  };
 
   const filteredStores = stores.filter((store) => {
     const label = String(store.shop_name || store.manager?.full_name || '').toLowerCase();
     return storeFilter === '' || label.includes(storeFilter.toLowerCase());
   });
 
+  const previewName = (field: string) => {
+    const value = form[field];
+    if (!value) return null;
+    if (value instanceof File) return value.name;
+    return String(value).split('/').pop();
+  };
+
   return (
     <div className="space-y-5">
-      {!hideImage && (
-        <div className="space-y-2">
-          <Label>Image du produit</Label>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-2 md:col-span-2">
+          <Label>Image principale</Label>
+          <input
+            type="file"
+            accept="image/*"
+            className="w-full rounded border border-slate-300 p-2"
+            onChange={e => set('image1', e.target.files?.[0] ?? null)}
+          />
+          {previewName('image1') && <p className="text-xs text-muted-foreground">Fichier actuel: {previewName('image1')}</p>}
+        </div>
+        <div className="space-y-2 md:col-span-2">
+          <Label>Ajouter 2 images (drag & drop)</Label>
           <div
-            className="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover:border-muted-foreground/50 transition-colors"
-            onClick={() => document.getElementById('prod-img-input')?.click()}
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={handleDropImages}
+            className="min-h-30 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-muted-foreground flex flex-col items-center justify-center text-center"
           >
-            {imageFile ? (
-              <div className="flex items-center justify-center gap-2 text-sm">
-                <ImagePlus className="h-5 w-5 text-green-500" /><span>{imageFile.name}</span>
-                <button type="button" onClick={e => { e.stopPropagation(); setImageFile(null); }} className="text-red-500"><X className="h-4 w-4" /></button>
-              </div>
-            ) : (
-              <><Upload className="h-8 w-8 mx-auto text-muted-foreground mb-2" /><p className="text-sm text-muted-foreground">Glissez ou cliquez</p></>
-            )}
-            <input id="prod-img-input" type="file" accept="image/*" className="hidden" onChange={e => setImageFile(e.target.files?.[0] ?? null)} />
+            <Upload className="h-5 w-5 mb-2" />
+            Glissez-déposez jusqu'à 2 images ici, ou utilisez les champs ci-dessous.
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Image secondaire 1</Label>
+              <input
+                type="file"
+                accept="image/*"
+                className="w-full rounded border border-slate-300 p-2"
+                onChange={e => set('image2', e.target.files?.[0] ?? null)}
+              />
+              {previewName('image2') && <p className="text-xs text-muted-foreground">Fichier actuel: {previewName('image2')}</p>}
+            </div>
+            <div className="space-y-2">
+              <Label>Image secondaire 2</Label>
+              <input
+                type="file"
+                accept="image/*"
+                className="w-full rounded border border-slate-300 p-2"
+                onChange={e => set('image3', e.target.files?.[0] ?? null)}
+              />
+              {previewName('image3') && <p className="text-xs text-muted-foreground">Fichier actuel: {previewName('image3')}</p>}
+            </div>
           </div>
         </div>
-      )}
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-2 md:col-span-2">
+          <Label>Image secondaire 1</Label>
+          <input
+            type="file"
+            accept="image/*"
+            className="w-full rounded border border-slate-300 p-2"
+            onChange={e => set('image2', e.target.files?.[0] ?? null)}
+          />
+          {previewName('image2') && <p className="text-xs text-muted-foreground">Fichier actuel: {previewName('image2')}</p>}
+        </div>
+        <div className="space-y-2">
+          <Label>Image secondaire 2</Label>
+          <input
+            type="file"
+            accept="image/*"
+            className="w-full rounded border border-slate-300 p-2"
+            onChange={e => set('image3', e.target.files?.[0] ?? null)}
+          />
+          {previewName('image3') && <p className="text-xs text-muted-foreground">Fichier actuel: {previewName('image3')}</p>}
+        </div>
+        <div className="space-y-2 md:col-span-2">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <Label>QR Code produit</Label>
+            <Button variant="secondary" size="sm" type="button" onClick={handleGenerateQr}>
+              Générer QR
+            </Button>
+          </div>
+          <input
+            type="file"
+            accept="image/*"
+            className="w-full rounded border border-slate-300 p-2"
+            onChange={e => set('qr_code', e.target.files?.[0] ?? null)}
+          />
+          {previewName('qr_code') && <p className="text-xs text-muted-foreground">Fichier actuel: {previewName('qr_code')}</p>}
+        </div>
         <div className="space-y-2">
           <Label>Référence / SKU *</Label>
           <Input placeholder="Ex: CREM-001" value={form.reference || ''} onChange={e => set('reference', e.target.value)} />

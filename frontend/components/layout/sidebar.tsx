@@ -92,11 +92,6 @@ const navigationItems = [
     superAdminOnly: true,
   },
   {
-    label: 'Scanner',
-    href: '/scanner',
-    icon: QrCode,
-  },
-  {
     label: 'Paramètres',
     href: '/settings',
     icon: Settings,
