@@ -259,7 +259,12 @@ class SaleViewSet(viewsets.ModelViewSet):
             return base_qs.filter(product__magasin__employers__user=user)
         return Sale.objects.none()
     def perform_create(self, serializer):
-        product = serializer.validated_data.get('product')
+        validated = serializer.validated_data
+        if validated.get('is_paid', True) and not validated.get('payment_date'):
+            serializer.validated_data['payment_date'] = timezone.now()
+        if not validated.get('is_paid', True) and not validated.get('payment_due_date'):
+            serializer.validated_data['payment_due_date'] = (timezone.now().date() + timedelta(days=7))
+        product = validated.get('product')
         old_qty = product.initial_quantity or 0
         sale = serializer.save(seller=self.request.user, magasin=product.magasin)
         product.initial_quantity -= sale.quantity

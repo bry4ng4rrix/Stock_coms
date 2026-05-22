@@ -39,6 +39,10 @@ export default function SalesPage() {
   const [showProductDropdown, setShowProductDropdown] = useState(false);
   const [quantity, setQuantity] = useState('1');
   const [salePrice, setSalePrice] = useState('');
+  const [customerName, setCustomerName] = useState('');
+  const [isPaid, setIsPaid] = useState(true);
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentDueDate, setPaymentDueDate] = useState('');
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -101,8 +105,25 @@ export default function SalesPage() {
     setProductSearch('');
     setQuantity('1');
     setSalePrice('');
+    setCustomerName('');
+    setIsPaid(true);
+    setPaymentAmount('');
+    setPaymentDueDate('');
     setShowProductDropdown(false);
   };
+
+  const paymentDueInfo = useMemo(() => {
+    if (isPaid || !paymentDueDate) return null;
+    const dueDate = new Date(paymentDueDate);
+    const today = new Date();
+    const diffDays = Math.ceil((today.getTime() - dueDate.getTime()) / 86_400_000);
+    return {
+      dueDate,
+      daysLate: diffDays,
+      isOverdue: diffDays >= 0,
+      daysUntil: Math.max(0, Math.ceil((dueDate.getTime() - today.getTime()) / 86_400_000)),
+    };
+  }, [isPaid, paymentDueDate]);
 
   const handleCreateSale = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -116,13 +137,28 @@ export default function SalesPage() {
       return;
     }
 
+    const paymentAmountValue = parseFloat(paymentAmount || '0');
+    const payload: any = {
+      product: selectedProduct.id,
+      quantity: qty,
+      sale_price: price,
+      customer_name: customerName || '',
+      is_paid: isPaid,
+    };
+    if (paymentAmountValue > 0) payload.payment_amount = paymentAmountValue;
+    if (!isPaid) {
+      if (paymentDueDate) {
+        payload.payment_due_date = paymentDueDate;
+      } else {
+        const defaultDue = new Date();
+        defaultDue.setDate(defaultDue.getDate() + 7);
+        payload.payment_due_date = defaultDue.toISOString().split('T')[0];
+      }
+    }
+
     setSubmitting(true);
     try {
-      await djangoClient.sales.create({
-        product: selectedProduct.id,
-        quantity: qty,
-        sale_price: price,
-      });
+      await djangoClient.sales.create(payload);
       toast.success(`Vente enregistrée — ${qty} × ${selectedProduct.name}`);
       setDialogOpen(false);
       resetForm();
@@ -212,7 +248,7 @@ export default function SalesPage() {
                               <div className="font-medium text-sm">{p.name}</div>
                               <div className="text-xs text-muted-foreground font-mono">{p.reference}</div>
                             </div>
-                            <div className="text-right flex-shrink-0">
+                            <div className="text-right shrink-0">
                               <div className="text-sm font-semibold">{fmt(Number(p.shell_price || 0))} Ar</div>
                               <Badge variant={p.initial_quantity > 5 ? 'default' : 'destructive'} className="text-[10px] px-1">
                                 <Package className="h-3 w-3 mr-1" />{p.initial_quantity}
@@ -245,6 +281,14 @@ export default function SalesPage() {
                 )}
 
                 {/* Quantity */}
+                <div className="space-y-2">
+                  <Label>Nom du client</Label>
+                  <Input
+                    placeholder="Nom du client"
+                    value={customerName}
+                    onChange={e => setCustomerName(e.target.value)}
+                  />
+                </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Quantité *</Label>
@@ -268,6 +312,58 @@ export default function SalesPage() {
                     />
                   </div>
                 </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Status de paiement</Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button
+                        type="button"
+                        variant={isPaid ? 'secondary' : 'outline'}
+                        size="sm"
+                        className="w-full"
+                        onClick={() => setIsPaid(true)}
+                      >Payé</Button>
+                      <Button
+                        type="button"
+                        variant={!isPaid ? 'secondary' : 'outline'}
+                        size="sm"
+                        className="w-full"
+                        onClick={() => setIsPaid(false)}
+                      >Pas encore</Button>
+                    </div>
+                  </div>
+                </div>
+                {!isPaid && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Montant versé (optionnel)</Label>
+                      <Input
+                        type="number" step="0.01" min="0"
+                        value={paymentAmount}
+                        onChange={e => setPaymentAmount(e.target.value)}
+                        placeholder="0.00"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Échéance de paiement</Label>
+                      <Input
+                        type="date"
+                        value={paymentDueDate}
+                        onChange={e => setPaymentDueDate(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                )}
+                {!isPaid && paymentDueInfo && (
+                  <div className={`rounded-md p-3 text-sm ${paymentDueInfo.isOverdue ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-yellow-50 text-yellow-700 border border-yellow-200'}`}>
+                    {paymentDueInfo.isOverdue ? (
+                      <p>Retard de paiement : {paymentDueInfo.daysLate} jour(s).</p>
+                    ) : (
+                      <p>Échéance de paiement dans {paymentDueInfo.daysUntil} jour(s).</p>
+                    )}
+                    <p className="text-xs text-muted-foreground">Échéance : {paymentDueDate}</p>
+                  </div>
+                )}
 
                 {/* Total preview */}
                 {quantity && salePrice && !isNaN(parseFloat(salePrice)) && (
@@ -372,10 +468,12 @@ export default function SalesPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Date</TableHead>
+                    <TableHead>Client</TableHead>
                     <TableHead>Produit</TableHead>
                     <TableHead className="text-right">Qté</TableHead>
                     <TableHead className="text-right">Prix unitaire</TableHead>
                     <TableHead className="text-right">Total</TableHead>
+                    <TableHead>Paiement</TableHead>
                     {isManager && <TableHead>Vendeur</TableHead>}
                     {isManager && <TableHead>Magasin</TableHead>}
                   </TableRow>
@@ -384,6 +482,7 @@ export default function SalesPage() {
                   {filteredSales.map(s => (
                     <TableRow key={s.id}>
                       <TableCell className="text-sm">{formatDate(s.sold_at)}</TableCell>
+                      <TableCell className="text-sm">{s.customer_name || '—'}</TableCell>
                       <TableCell>
                         <p className="font-medium text-sm">{s.product_name || `Produit #${s.product}`}</p>
                       </TableCell>
@@ -392,6 +491,29 @@ export default function SalesPage() {
                       </TableCell>
                       <TableCell className="text-right text-sm">{fmt(Number(s.sale_price || 0))} Ar</TableCell>
                       <TableCell className="text-right font-semibold">{fmt(Number(s.total_price || 0))} Ar</TableCell>
+                      <TableCell className="text-sm">
+                        {s.is_paid ? (
+                          <div className="space-y-1">
+                            <span className="font-semibold text-green-700">Payé</span>
+                            {s.payment_date && <span className="text-xs text-muted-foreground">{new Date(s.payment_date).toLocaleDateString('fr-FR')}</span>}
+                          </div>
+                        ) : (
+                          <div className="space-y-1">
+                            <span className="font-semibold text-orange-700">Non payé</span>
+                            {s.payment_due_date ? (
+                              <span className="text-xs text-muted-foreground">
+                                {(() => {
+                                  const due = new Date(s.payment_due_date);
+                                  const diff = Math.ceil((new Date().getTime() - due.getTime()) / 86_400_000);
+                                  return diff >= 0 ? `Retard ${diff} j` : `Dans ${Math.abs(diff)} j`;
+                                })()}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">Aucune échéance</span>
+                            )}
+                          </div>
+                        )}
+                      </TableCell>
                       {isManager && <TableCell className="text-sm">{s.seller_name || '—'}</TableCell>}
                       {isManager && (
                         <TableCell className="text-sm">
