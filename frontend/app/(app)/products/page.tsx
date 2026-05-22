@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import {
-  Plus, Download, Pencil, Trash2, X, ImagePlus, Upload, Loader2, AlertTriangle, QrCode,
+  Plus, Download, Pencil, Trash2, X, ImagePlus, Upload, Loader2, AlertTriangle, QrCode, ShoppingCart,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { generateSimpleQRCode } from '@/lib/qrcode-generator';
@@ -105,6 +105,27 @@ export default function ProductsPage() {
   const [addingProduct, setAddingProduct] = useState<any>(null);
   const [addAmount, setAddAmount] = useState<number | string>(0);
   const [addLoading, setAddLoading] = useState(false);
+  const [cartItems, setCartItems] = useState<any[]>([]);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [checkoutCustomer, setCheckoutCustomer] = useState('');
+  const [checkoutIsPaid, setCheckoutIsPaid] = useState(true);
+  const [checkoutPaymentAmount, setCheckoutPaymentAmount] = useState('');
+  const [checkoutDueDate, setCheckoutDueDate] = useState('');
+  const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
+
+  const cartCount = cartItems.reduce((sum, item) => sum + (item.quantity ?? 0), 0);
+  const cartTotal = cartItems.reduce((sum, item) => sum + Number(item.shell_price || 0) * (item.quantity ?? 1), 0);
+  const checkoutDueInfo = !checkoutIsPaid && checkoutDueDate ? (() => {
+    const due = new Date(checkoutDueDate);
+    const today = new Date();
+    const diffDays = Math.ceil((today.getTime() - due.getTime()) / 86_400_000);
+    return {
+      due,
+      daysLate: diffDays,
+      isOverdue: diffDays >= 0,
+      daysUntil: Math.max(0, Math.ceil((due.getTime() - today.getTime()) / 86_400_000)),
+    };
+  })() : null;
 
   const expiringProducts = products
     .filter(p => p.expiry_date)
@@ -263,6 +284,70 @@ export default function ProductsPage() {
       toast.error(err.message ?? 'Erreur lors de la modification');
     } finally {
       setEditSaving(false);
+    }
+  };
+
+  const handleAddToCart = (product: any) => {
+    setCartItems((prev) => {
+      const existing = prev.find((item) => item.id === product.id);
+      if (existing) {
+        return prev.map((item) => item.id === product.id ? { ...item, quantity: (item.quantity ?? 1) + 1 } : item);
+      }
+      return [...prev, { ...product, quantity: 1 }];
+    });
+    toast.success(`${product.name} ajouté au panier`);
+  };
+
+  const handleRemoveCartItem = (productId: number) => {
+    setCartItems((prev) => prev.filter((item) => item.id !== productId));
+  };
+
+  const handleCheckout = async (e: any) => {
+    e.preventDefault();
+    if (cartItems.length === 0) {
+      toast.error('Le panier est vide.');
+      return;
+    }
+    if (!checkoutCustomer) {
+      toast.error('Veuillez renseigner le nom du client.');
+      return;
+    }
+
+    setCheckoutSubmitting(true);
+    try {
+      await Promise.all(cartItems.map((item) => {
+        const payload: any = {
+          product: item.id,
+          quantity: item.quantity ?? 1,
+          sale_price: Number(item.shell_price || 0),
+          customer_name: checkoutCustomer,
+          is_paid: checkoutIsPaid,
+        };
+        const paymentAmountValue = parseFloat(checkoutPaymentAmount || '0');
+        if (paymentAmountValue > 0) payload.payment_amount = paymentAmountValue;
+        if (!checkoutIsPaid) {
+          if (checkoutDueDate) {
+            payload.payment_due_date = checkoutDueDate;
+          } else {
+            const defaultDue = new Date();
+            defaultDue.setDate(defaultDue.getDate() + 7);
+            payload.payment_due_date = defaultDue.toISOString().split('T')[0];
+          }
+        }
+        return djangoClient.sales.create(payload);
+      }));
+      toast.success('Paiement enregistré pour le panier');
+      setCheckoutOpen(false);
+      setCartItems([]);
+      setCheckoutCustomer('');
+      setCheckoutIsPaid(true);
+      setCheckoutPaymentAmount('');
+      setCheckoutDueDate('');
+      await fetchData();
+    } catch (err: any) {
+      toast.error(err.message ?? 'Erreur lors du paiement');
+    } finally {
+      setCheckoutSubmitting(false);
     }
   };
 
@@ -469,6 +554,14 @@ export default function ProductsPage() {
                                   <Pencil className="h-4 w-4" />
                                 </Button>
                               )}
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleAddToCart(product)}
+                                disabled={(product.initial_quantity ?? 0) <= 0}
+                              >
+                                <ShoppingCart className="h-4 w-4" />
+                              </Button>
                               {/* Managers can only add stock (increase quantity), not edit or delete */}
                               {isManager && (
                                 <Button variant="ghost" size="sm" onClick={() => { setAddingProduct(product); setAddAmount(0); setAddStockDialogOpen(true); }}>
@@ -627,6 +720,127 @@ export default function ProductsPage() {
           )}
         </DialogContent>
       </Dialog>
+      {cartItems.length > 0 && (
+        <>
+          <div className="fixed right-4 bottom-4 z-50 w-80 rounded-3xl border border-slate-200 bg-white/95 p-4 shadow-2xl backdrop-blur-sm">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold">Panier</p>
+                <p className="text-xs text-muted-foreground">{cartCount} article(s)</p>
+              </div>
+              <Button variant="secondary" size="sm" onClick={() => setCheckoutOpen(true)}>
+                <ShoppingCart className="h-4 w-4" /> Payer
+              </Button>
+            </div>
+            <div className="mt-3 space-y-2 max-h-48 overflow-y-auto">
+              {cartItems.map((item) => (
+                <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{item.name}</p>
+                    <p className="text-xs text-muted-foreground">x{item.quantity} · {Number(item.shell_price || 0).toLocaleString('fr-MG')} Ar</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveCartItem(item.id)}
+                    className="text-sm font-semibold text-red-600 hover:text-red-700"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 flex items-center justify-between border-t border-slate-200 pt-3 text-sm font-semibold">
+              <span>Total</span>
+              <span>{cartTotal.toLocaleString('fr-MG')} Ar</span>
+            </div>
+          </div>
+
+          <Dialog open={checkoutOpen} onOpenChange={setCheckoutOpen}>
+            <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Paiement du panier</DialogTitle>
+                <DialogDescription>Finalisez la vente de {cartCount} produit(s)</DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleCheckout} className="space-y-4 pt-2">
+                <div className="space-y-2">
+                  <Label>Nom du client</Label>
+                  <Input
+                    placeholder="Nom du client"
+                    value={checkoutCustomer}
+                    onChange={e => setCheckoutCustomer(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <Button
+                    type="button"
+                    variant={checkoutIsPaid ? 'secondary' : 'outline'}
+                    size="sm"
+                    className="w-full"
+                    onClick={() => setCheckoutIsPaid(true)}
+                  >
+                    Payé
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={!checkoutIsPaid ? 'secondary' : 'outline'}
+                    size="sm"
+                    className="w-full"
+                    onClick={() => setCheckoutIsPaid(false)}
+                  >
+                    Pas encore
+                  </Button>
+                </div>
+                {!checkoutIsPaid && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Montant versé (optionnel)</Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={checkoutPaymentAmount}
+                        onChange={e => setCheckoutPaymentAmount(e.target.value)}
+                        placeholder="0.00"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Échéance de paiement</Label>
+                      <Input
+                        type="date"
+                        value={checkoutDueDate}
+                        onChange={e => setCheckoutDueDate(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                )}
+                {!checkoutIsPaid && checkoutDueInfo && (
+                  <div className={`rounded-xl p-3 text-sm ${checkoutDueInfo.isOverdue ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-yellow-50 text-yellow-700 border border-yellow-200'}`}>
+                    {checkoutDueInfo.isOverdue ? (
+                      <p>Retard de paiement : {checkoutDueInfo.daysLate} jour(s).</p>
+                    ) : (
+                      <p>Échéance de paiement dans {checkoutDueInfo.daysUntil} jour(s).</p>
+                    )}
+                    <p className="text-xs text-muted-foreground">Échéance : {checkoutDueDate}</p>
+                  </div>
+                )}
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex items-center justify-between text-sm text-muted-foreground">
+                    <span>Total panier</span>
+                    <span>{cartTotal.toLocaleString('fr-MG')} Ar</span>
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" type="button" onClick={() => setCheckoutOpen(false)}>Annuler</Button>
+                  <Button type="submit" disabled={checkoutSubmitting}>
+                    {checkoutSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Valider le paiement
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </>
+      )}
     </div>
   );
 }
