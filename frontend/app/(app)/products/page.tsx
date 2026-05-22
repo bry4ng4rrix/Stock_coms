@@ -179,6 +179,10 @@ export default function ProductsPage() {
       toast.error('Veuillez remplir les champs obligatoires (Référence, Nom, Catégorie, Prix de vente)');
       return;
     }
+    if (!form.unit_price) {
+      toast.error("Veuillez renseigner le prix d'achat.");
+      return;
+    }
     if (isAdmin && !form.magasin) {
       toast.error('Veuillez sélectionner un magasin.');
       return;
@@ -190,16 +194,14 @@ export default function ProductsPage() {
       fd.append('name', form.name);
       fd.append('category', form.category);
       fd.append('shell_price', form.shell_price);
+      fd.append('unit_price', form.unit_price);
       fd.append('initial_quantity', form.initial_quantity || '0');
       fd.append('alert_threshold', form.alert_threshold || '5');
       if (form.brand) fd.append('brand', form.brand);
       if (form.description) fd.append('description', form.description);
       if (form.expiry_date) fd.append('expiry_date', form.expiry_date);
-      if (isAdmin) {
-        if (form.magasin) fd.append('magasin', String(form.magasin));
-        if (form.unit_price) fd.append('unit_price', form.unit_price);
-      } else {
-        fd.append('unit_price', form.shell_price);
+      if (isAdmin && form.magasin) {
+        fd.append('magasin', String(form.magasin));
       }
       if (imageFile) fd.append('image1', imageFile);
 
@@ -618,12 +620,10 @@ function ProductForm({ form, setForm, isAdmin, stores = [], storesLoading = fals
           <Label>Prix de vente (Ar) *</Label>
           <Input type="number" step="0.01" placeholder="0.00" value={form.shell_price || ''} onChange={e => set('shell_price', e.target.value)} />
         </div>
-        {isAdmin && (
-          <div className="space-y-2">
-            <Label>Prix d'achat (Ar)</Label>
-            <Input type="number" step="0.01" placeholder="0.00" value={form.unit_price || ''} onChange={e => set('unit_price', e.target.value)} />
-          </div>
-        )}
+        <div className="space-y-2">
+          <Label>Prix d'achat (Ar) *</Label>
+          <Input type="number" step="0.01" placeholder="0.00" value={form.unit_price || ''} onChange={e => set('unit_price', e.target.value)} />
+        </div>
         <div className="space-y-2">
           <Label>Quantité initiale</Label>
           <Input type="number" min="0" placeholder="0" value={form.initial_quantity ?? ''} onChange={e => set('initial_quantity', e.target.value)} />

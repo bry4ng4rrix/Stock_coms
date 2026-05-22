@@ -158,6 +158,7 @@ class Product(models.Model):
     # PRIX
     # =====================================
 
+    purchase_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     unit_price = models.DecimalField(max_digits=10,decimal_places=2)
     shell_price = models.DecimalField(max_digits=10,decimal_places=2)
     
@@ -203,6 +204,12 @@ class Product(models.Model):
     image3 = models.ImageField(upload_to="products/",blank=True,null=True)
     qr_code = models.ImageField(upload_to="products/",blank=True,null=True)
 
+    def save(self, *args, **kwargs):
+        # Preserve an explicit purchase price; fall back to unit_price only when no cost was provided.
+        if self.unit_price is not None and (self.purchase_price is None or self.purchase_price == 0):
+            self.purchase_price = self.unit_price
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return self.name
 
@@ -213,22 +220,32 @@ class Sale(models.Model):
     magasin = models.ForeignKey("MagasinProfile", on_delete=models.SET_NULL, related_name="sales", null=True, blank=True)
     seller = models.ForeignKey(CustomUser, on_delete=models.SET_NULL, related_name="sales", null=True, blank=True)
     quantity = models.PositiveIntegerField()
+    purchase_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     sale_price = models.DecimalField(max_digits=10, decimal_places=2)
-    unit_cost = models.DecimalField(max_digits=10, decimal_places=2, editable=False, default=0)
-    profit_per_unit = models.DecimalField(max_digits=10, decimal_places=2, editable=False, default=0)
     total_price = models.DecimalField(max_digits=12, decimal_places=2, editable=False, default=0)
     total_profit = models.DecimalField(max_digits=12, decimal_places=2, editable=False, default=0)
     sold_at = models.DateTimeField(auto_now_add=True)
 
     def save(self, *args, **kwargs):
-        self.unit_cost = self.product.unit_price
-        self.profit_per_unit = self.sale_price - self.unit_cost
+        fallback_purchase_price = self.product.purchase_price
+        if fallback_purchase_price is None or fallback_purchase_price == 0:
+            fallback_purchase_price = self.product.unit_price or 0
+
+        self.purchase_price = fallback_purchase_price
         self.total_price = self.quantity * self.sale_price
-        self.total_profit = self.profit_per_unit * self.quantity
+        self.total_profit = (self.sale_price - self.purchase_price) * self.quantity
         super().save(*args, **kwargs)
 
     def __str__(self):
         return f"Sale of {self.product.name} x {self.quantity}"
+
+    @property
+    def profit_per_unit(self):
+        """Profit per unit for this sale (sale_price - purchase_price)"""
+        fallback_purchase_price = self.purchase_price
+        if fallback_purchase_price is None or fallback_purchase_price == 0:
+            fallback_purchase_price = self.product.purchase_price or self.product.unit_price or 0
+        return self.sale_price - fallback_purchase_price
 
 
 class Notification(models.Model):

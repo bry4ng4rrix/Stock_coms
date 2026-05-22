@@ -12,6 +12,7 @@ from .views import (
     AdminMagasinProfitView,
     SaleViewSet,
     MovementViewSet,
+    AdminMagasinOverviewView,
     UsersByMagasinView,
     MagasinStatsView,
     DashboardView,
@@ -58,6 +59,8 @@ urlpatterns = [
     path("magasins/users/", UsersByMagasinView.as_view()),
     # Store statistics by magasin
     path("magasins/stats/", MagasinStatsView.as_view()),
+    # Overview détaillée des magasins pour l'admin
+    path("magasins/overview/", AdminMagasinOverviewView.as_view()),
     # Dashboard stats
     path("dashboard/", DashboardView.as_view()),
     # Pending users (awaiting approval)

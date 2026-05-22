@@ -2,6 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status, viewsets
+from rest_framework.decorators import action
 from django.db.models import Sum, F, DecimalField, Count
 from django.db.models.functions import Coalesce
 from django.utils import timezone
@@ -13,6 +14,33 @@ from .permissions import IsAdmin
 from rest_framework_simplejwt.views import TokenViewBase
 from .authentication import CustomTokenObtainPairSerializer
 from .models import Notification
+
+
+def _sale_purchase_price(sale):
+    purchase_price = sale.purchase_price
+    if purchase_price is None or purchase_price == 0:
+        product = sale.product
+        purchase_price = getattr(product, "purchase_price", None) or getattr(product, "unit_price", 0) or 0
+    return purchase_price
+
+
+def _sale_totals(sales_qs):
+    total_revenue = 0
+    total_cost = 0
+    total_profit = 0
+    total_quantity = 0
+
+    for sale in sales_qs.select_related("product"):
+        quantity = sale.quantity or 0
+        sale_price = sale.sale_price or 0
+        purchase_price = _sale_purchase_price(sale)
+
+        total_revenue += sale_price * quantity
+        total_cost += purchase_price * quantity
+        total_profit += (sale_price - purchase_price) * quantity
+        total_quantity += quantity
+
+    return total_revenue, total_cost, total_profit, total_quantity
 
 # =========================
 # AUTH LOGIN
@@ -143,13 +171,7 @@ class ProfitView(APIView):
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def get(self, request):
-        revenue = Sale.objects.aggregate(
-            total=Sum(F('sale_price') * F('quantity'), output_field=DecimalField())
-        )['total'] or 0
-        cost = Sale.objects.aggregate(
-            total=Sum(F('product__unit_price') * F('quantity'), output_field=DecimalField())
-        )['total'] or 0
-        profit = revenue - cost
+        revenue, cost, profit, _ = _sale_totals(Sale.objects.all())
         return Response({
             'total_revenue': revenue,
             'total_cost': cost,
@@ -164,37 +186,59 @@ class AdminMagasinProfitView(APIView):
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def get(self, request):
-        magasins = MagasinProfile.objects.filter(admin=request.user).annotate(
-            total_revenue=Coalesce(
-                Sum(F('sales__sale_price') * F('sales__quantity'), output_field=DecimalField()),
-                0,
-                output_field=DecimalField()
-            ),
-            total_cost=Coalesce(
-                Sum(F('sales__product__unit_price') * F('sales__quantity'), output_field=DecimalField()),
-                0,
-                output_field=DecimalField()
-            ),
-            total_profit=Coalesce(
-                Sum((F('sales__sale_price') - F('sales__product__unit_price')) * F('sales__quantity'), output_field=DecimalField()),
-                0,
-                output_field=DecimalField()
-            ),
-            total_quantity=Coalesce(Sum('sales__quantity', output_field=DecimalField()), 0, output_field=DecimalField()),
-        )
+        magasins = MagasinProfile.objects.filter(admin=request.user)
 
         data = []
         for magasin in magasins:
+            sales_qs = Sale.objects.filter(magasin=magasin)
+            total_revenue, total_cost, total_profit, total_quantity = _sale_totals(sales_qs)
+
             data.append({
                 'magasin_id': magasin.id,
                 'shop_name': magasin.shop_name,
-                'total_quantity_sold': magasin.total_quantity,
-                'total_revenue': magasin.total_revenue,
-                'total_cost': magasin.total_cost,
-                'total_profit': magasin.total_profit,
+                'total_quantity_sold': total_quantity,
+                'total_revenue': total_revenue,
+                'total_cost': total_cost,
+                'total_profit': total_profit,
             })
 
         return Response({'profit_by_magasins': data})
+
+
+class AdminMagasinOverviewView(APIView):
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def get(self, request):
+        week_start = timezone.now() - timedelta(days=7)
+        magasins = MagasinProfile.objects.filter(admin=request.user).select_related("user")
+
+        response_data = []
+
+        for magasin in magasins:
+            products_qs = Product.objects.filter(magasin=magasin)
+            sales_qs = Sale.objects.filter(magasin=magasin)
+
+            total_stock_value = products_qs.aggregate(
+                total=Coalesce(
+                    Sum(F("initial_quantity") * F("purchase_price"), output_field=DecimalField()),
+                    0,
+                    output_field=DecimalField(),
+                )
+            )["total"]
+
+            _, _, total_profit, _ = _sale_totals(sales_qs)
+
+            response_data.append({
+                "magasin_id": magasin.id,
+                "shop_name": magasin.shop_name,
+                "total_stock_value": total_stock_value,
+                "total_profit": total_profit,
+                "number_of_products": products_qs.count(),
+                "number_of_sales_week": sales_qs.filter(sold_at__gte=week_start).count(),
+                "number_of_employees": EmployerProfile.objects.filter(magasin=magasin).count(),
+            })
+
+        return Response({"magasins": response_data})
 
 
 # =========================
@@ -469,12 +513,38 @@ class NotificationViewSet(viewsets.ModelViewSet):
                 return Notification.objects.none()
         elif user.role == 'employer':
             try:
-                employer = EmployerProfile.objects.get(user=user)
-                if employer.magasin:
+                employer = EmployerProfile.objects.filter(user=user).first()
+                if employer and employer.magasin:
                     return qs.filter(magasin=employer.magasin)
-            except EmployerProfile.DoesNotExist:
+            except Exception:
                 pass
             return Notification.objects.none()
+
+    @action(detail=False, methods=['post'], url_path='mark-all-read')
+    def mark_all_read(self, request):
+        """Marque toutes les notifications visibles comme lues."""
+        self.get_queryset().update(is_read=True)
+        return Response({"message": "Toutes les notifications marquées comme lues."})
+
+    @action(detail=False, methods=['post'], url_path='delete-all')
+    def delete_all(self, request):
+        """Supprime toutes les notifications visibles."""
+        self.get_queryset().delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=False, methods=['post'], url_path='bulk-delete')
+    def bulk_delete(self, request):
+        """Supprime une sélection spécifique de notifications."""
+        ids = request.data.get('ids', [])
+        self.get_queryset().filter(id__in=ids).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=False, methods=['post'], url_path='bulk-read')
+    def bulk_read(self, request):
+        """Marque une sélection spécifique comme lue."""
+        ids = request.data.get('ids', [])
+        self.get_queryset().filter(id__in=ids).update(is_read=True)
+        return Response({"message": "Notifications marquées comme lues."})
 
     def partial_update(self, request, *args, **kwargs):
         # allow marking as read
@@ -590,15 +660,13 @@ class MagasinStatsView(APIView):
 
             total_products = products_qs.count()
             total_stock_value = products_qs.aggregate(
-                total=Coalesce(Sum(F('initial_quantity') * F('unit_price'), output_field=DecimalField()), 0, output_field=DecimalField())
+                total=Coalesce(Sum(F('initial_quantity') * F('purchase_price'), output_field=DecimalField()), 0, output_field=DecimalField())
             )['total']
             total_sold_value = sales_qs.aggregate(
                 total=Coalesce(Sum('total_price', output_field=DecimalField()), 0, output_field=DecimalField())
             )['total']
-            # compute profit = revenue - cost
-            revenue = sales_qs.aggregate(total=Coalesce(Sum('total_price', output_field=DecimalField()), 0, output_field=DecimalField()))['total']
-            cost = sales_qs.aggregate(total=Coalesce(Sum(F('product__unit_price') * F('quantity'), output_field=DecimalField()), 0, output_field=DecimalField()))['total']
-            profit = (revenue or 0) - (cost or 0)
+            # compute profit = sum of total_profit from each sale
+            profit = sales_qs.aggregate(total=Coalesce(Sum('total_profit', output_field=DecimalField()), 0, output_field=DecimalField()))['total']
 
             response_data.append({
                 "magasin_id": mag.id,
@@ -625,15 +693,14 @@ class DashboardView(APIView):
 
         if role == "admin":
             # KPIs
-            total_revenue = Sale.objects.aggregate(total=Sum('total_price'))['total'] or 0
-            total_profit = Sale.objects.aggregate(total=Sum(F('sale_price') * F('quantity') - F('product__unit_price') * F('quantity'), output_field=DecimalField()))['total'] or 0
-            total_stock_value = Product.objects.aggregate(total=Sum(F('initial_quantity') * F('unit_price'), output_field=DecimalField()))['total'] or 0
+            total_revenue, _, total_profit, _ = _sale_totals(Sale.objects.all())
+            total_stock_value = Product.objects.aggregate(total=Sum(F('initial_quantity') * F('purchase_price'), output_field=DecimalField()))['total'] or 0
             total_magasins = MagasinProfile.objects.count()
             total_employers = EmployerProfile.objects.count()
             total_products = Product.objects.count()
             total_sales = Sale.objects.count()
             sales_today = Sale.objects.filter(sold_at__date=today).count()
-            profit_today = Sale.objects.filter(sold_at__date=today).aggregate(total=Sum(F('sale_price') * F('quantity') - F('product__unit_price') * F('quantity'), output_field=DecimalField()))['total'] or 0
+            _, _, profit_today, _ = _sale_totals(Sale.objects.filter(sold_at__date=today))
             low_stock_count = Product.objects.filter(initial_quantity__lte=F('alert_threshold')).count()
             expired_count = Product.objects.filter(expiry_date__lt=today).count()
             expiring_soon_count = Product.objects.filter(expiry_date__range=[today, today + timedelta(days=30)]).count()
@@ -641,7 +708,7 @@ class DashboardView(APIView):
             # Lists
             top_products = Sale.objects.values('product__name', 'product__magasin__shop_name').annotate(
                 qty_sold=Sum('quantity'),
-                profit=Sum(F('sale_price') * F('quantity') - F('product__unit_price') * F('quantity'), output_field=DecimalField())
+                profit=Sum('total_profit')
             ).order_by('-qty_sold')[:5]
 
             bottom_products = Product.objects.values('name', 'initial_quantity').annotate(
@@ -676,12 +743,11 @@ class DashboardView(APIView):
             best_employees = Sale.objects.values('seller__full_name').annotate(
                 sales_count=Count('id'),
                 total_amount=Sum('total_price'),
-                profit=Sum(F('sale_price') * F('quantity') - F('product__unit_price') * F('quantity'), output_field=DecimalField())
+                profit=Sum('total_profit')
             ).order_by('-total_amount')[:5]
 
             best_shops = Sale.objects.values('magasin__shop_name').annotate(
                 total_amount=Sum('total_price'),
-                profit=Sum(F('sale_price') * F('quantity') - F('product__unit_price') * F('quantity'), output_field=DecimalField()),
                 sales_count=Count('id'),
                 total_stock=Coalesce(Sum('product__initial_quantity'), 0)
             ).order_by('-total_amount')[:5]
@@ -720,12 +786,11 @@ class DashboardView(APIView):
             except MagasinProfile.DoesNotExist:
                 return Response({"error": "Magasin profile not found"}, status=404)
 
-            # KPIs (without exposing company wide unit_price)
+            # KPIs (without exposing company wide purchase_price)
             sales_today = Sale.objects.filter(magasin=magasin, sold_at__date=today).count()
-            profit_today = Sale.objects.filter(magasin=magasin, sold_at__date=today).aggregate(total=Sum(F('sale_price') * F('quantity') - F('product__unit_price') * F('quantity'), output_field=DecimalField()))['total'] or 0
-            total_revenue = Sale.objects.filter(magasin=magasin).aggregate(total=Sum('total_price', output_field=DecimalField()))['total'] or 0
-            total_profit = Sale.objects.filter(magasin=magasin).aggregate(total=Sum(F('sale_price') * F('quantity') - F('product__unit_price') * F('quantity'), output_field=DecimalField()))['total'] or 0
-            stock_value = Product.objects.filter(magasin=magasin).aggregate(total=Sum(F('initial_quantity') * F('unit_price'), output_field=DecimalField()))['total'] or 0
+            _, _, profit_today, _ = _sale_totals(Sale.objects.filter(magasin=magasin, sold_at__date=today))
+            total_revenue, _, total_profit, _ = _sale_totals(Sale.objects.filter(magasin=magasin))
+            stock_value = Product.objects.filter(magasin=magasin).aggregate(total=Sum(F('initial_quantity') * F('purchase_price'), output_field=DecimalField()))['total'] or 0
             total_products = Product.objects.filter(magasin=magasin).count()
             total_sales = Sale.objects.filter(magasin=magasin).count()
             low_stock_count = Product.objects.filter(magasin=magasin, initial_quantity__lte=F('alert_threshold')).count()

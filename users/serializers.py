@@ -87,6 +87,7 @@ class ProductSerializer(serializers.ModelSerializer):
         # Hide purchase price (unit_price) to magasin and employer roles
         if request and request.user and getattr(request.user, "role", None) != "admin":
             representation.pop("unit_price", None)
+            representation.pop("purchase_price", None)
         return representation
 
 class SaleSerializer(serializers.ModelSerializer):
