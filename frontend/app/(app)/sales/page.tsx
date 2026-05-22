@@ -83,6 +83,16 @@ export default function SalesPage() {
   const todayRevenue = useMemo(() =>
     todaySales.reduce((sum, s) => sum + Number(s.total_price || 0), 0), [todaySales]);
 
+  const unpaidSales = useMemo(() =>
+    sales.filter(s => !s.is_paid), [sales]);
+
+  const unpaidSalesCount = useMemo(() => unpaidSales.length, [unpaidSales]);
+  const unpaidSalesAmount = useMemo(() => unpaidSales.reduce((sum, s) => {
+    const total = Number(s.total_price || 0);
+    const paid = Number(s.payment_amount || 0);
+    return sum + Math.max(0, total - paid);
+  }, 0), [unpaidSales]);
+
   const filteredProducts = useMemo(() =>
     products.filter(p => {
       const term = productSearch.toLowerCase();
@@ -391,7 +401,7 @@ export default function SalesPage() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -442,6 +452,30 @@ export default function SalesPage() {
               <div className="text-2xl font-bold">
                 {sales.reduce((sum, s) => sum + (s.quantity || 0), 0)}
               </div>
+            )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-red-500" />Ventes impayées
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {loading ? <Skeleton className="h-8 w-12" /> : (
+              <div className="text-2xl font-bold">{unpaidSalesCount}</div>
+            )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <DollarSign className="h-4 w-4 text-red-500" />Montant impayé
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {loading ? <Skeleton className="h-8 w-28" /> : (
+              <div className="text-xl font-bold">{fmt(unpaidSalesAmount)} Ar</div>
             )}
           </CardContent>
         </Card>

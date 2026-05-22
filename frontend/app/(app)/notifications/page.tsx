@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Bell, Trash2, Mail, Package, User } from 'lucide-react';
+import { Bell, Trash2, Mail, Package, User ,CheckCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -166,14 +166,29 @@ export default function NotificationsPage() {
                         </p>
                       </div>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Button size="xs" variant="outline" onClick={() => toggleRead(notification)} disabled={actionLoading}>
-                        {notification.is_read ? 'Marquer non lu' : 'Marquer lu'}
-                      </Button>
-                      <Button size="xs" variant="destructive" onClick={() => deleteNotification(notification.id)} disabled={actionLoading}>
-                        Supprimer
-                      </Button>
-                    </div>
+                   <div className="flex flex-wrap gap-2">
+  <Button
+    size="icon"
+    variant="outline"
+    onClick={() => toggleRead(notification)}
+    disabled={actionLoading}
+  >
+    {notification.is_read ? (
+      <Mail className="h-4 w-4" />
+    ) : (
+      <CheckCheck className="h-4 w-4" />
+    )}
+  </Button>
+
+  <Button
+    size="icon"
+    variant="destructive"
+    onClick={() => deleteNotification(notification.id)}
+    disabled={actionLoading}
+  >
+    <Trash2 className="h-4 w-4" />
+  </Button>
+</div>
                   </div>
                 </div>
               ))}

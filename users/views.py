@@ -3,7 +3,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from django.db.models import Sum, F, DecimalField, Count
+from django.db.models import Sum, F, DecimalField, Count, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from datetime import timedelta
@@ -41,6 +41,19 @@ def _sale_totals(sales_qs):
         total_quantity += quantity
 
     return total_revenue, total_cost, total_profit, total_quantity
+
+
+def _unpaid_sales_metrics(sales_qs):
+    unpaid_qs = sales_qs.filter(is_paid=False)
+    unpaid_count = unpaid_qs.count()
+    unpaid_value = unpaid_qs.aggregate(
+        total=Coalesce(
+            Sum(F('total_price') - Coalesce(F('payment_amount'), Value(0), output_field=DecimalField()), output_field=DecimalField()),
+            Value(0),
+            output_field=DecimalField()
+        )
+    )['total'] or 0
+    return unpaid_count, unpaid_value
 
 # =========================
 # AUTH LOGIN
@@ -675,7 +688,7 @@ class MagasinStatsView(APIView):
                 total=Coalesce(Sum('total_price', output_field=DecimalField()), 0, output_field=DecimalField())
             )['total']
             # compute profit = sum of total_profit from each sale
-            profit = sales_qs.aggregate(total=Coalesce(Sum('total_profit', output_field=DecimalField()), 0, output_field=DecimalField()))['total']
+            profit = sales_qs.aggregate(total=Coalesce(Sum('total_profit', output_field=DecimalField()), Value(0), output_field=DecimalField()))['total']
 
             response_data.append({
                 "magasin_id": mag.id,
@@ -713,6 +726,7 @@ class DashboardView(APIView):
             low_stock_count = Product.objects.filter(initial_quantity__lte=F('alert_threshold')).count()
             expired_count = Product.objects.filter(expiry_date__lt=today).count()
             expiring_soon_count = Product.objects.filter(expiry_date__range=[today, today + timedelta(days=30)]).count()
+            unpaid_sales_count, unpaid_sales_value = _unpaid_sales_metrics(Sale.objects.all())
 
             # Lists
             top_products = Sale.objects.values('product__name', 'product__magasin__shop_name').annotate(
@@ -775,7 +789,9 @@ class DashboardView(APIView):
                     "profit_today": profit_today,
                     "low_stock_count": low_stock_count,
                     "expired_count": expired_count,
-                    "expiring_soon_count": expiring_soon_count
+                    "expiring_soon_count": expiring_soon_count,
+                    "unpaid_sales_count": unpaid_sales_count,
+                    "unpaid_sales_value": unpaid_sales_value,
                 },
                 "lists": {
                     "top_products": top_products,
@@ -804,6 +820,7 @@ class DashboardView(APIView):
             total_sales = Sale.objects.filter(magasin=magasin).count()
             low_stock_count = Product.objects.filter(magasin=magasin, initial_quantity__lte=F('alert_threshold')).count()
             expired_count = Product.objects.filter(magasin=magasin, expiry_date__lt=today).count()
+            unpaid_sales_count, unpaid_sales_value = _unpaid_sales_metrics(Sale.objects.filter(magasin=magasin))
 
             # Lists (never showing individual unit_price)
             top_products = Sale.objects.filter(magasin=magasin).values('product__name').annotate(
@@ -845,7 +862,9 @@ class DashboardView(APIView):
                     "total_products": total_products,
                     "total_sales": total_sales,
                     "low_stock_count": low_stock_count,
-                    "expired_count": expired_count
+                    "expired_count": expired_count,
+                    "unpaid_sales_count": unpaid_sales_count,
+                    "unpaid_sales_value": unpaid_sales_value,
                 },
                 "lists": {
                     "top_products": top_products,
@@ -868,6 +887,7 @@ class DashboardView(APIView):
             total_amount_sold = Sale.objects.filter(seller=user).aggregate(total=Sum('total_price'))['total'] or 0
             products_sold_count = Sale.objects.filter(seller=user).aggregate(total=Sum('quantity'))['total'] or 0
             clients_count = Sale.objects.filter(seller=user).count()
+            unpaid_sales_count, unpaid_sales_value = _unpaid_sales_metrics(Sale.objects.filter(seller=user))
 
             # Lists
             recent_sales_qs = Sale.objects.filter(seller=user).select_related('product').order_by('-sold_at')[:5]
@@ -886,7 +906,9 @@ class DashboardView(APIView):
                     "my_sales_today": my_sales_today,
                     "total_amount_sold": total_amount_sold,
                     "products_sold_count": products_sold_count,
-                    "clients_count": clients_count
+                    "clients_count": clients_count,
+                    "unpaid_sales_count": unpaid_sales_count,
+                    "unpaid_sales_value": unpaid_sales_value,
                 },
                 "lists": {
                     "recent_sales": recent_sales
