@@ -253,6 +253,9 @@ class Notification(models.Model):
         ("sale", "Sale"),
         ("product", "Product"),
         ("user", "User"),
+        ("movement", "Movement"),
+        ("alert", "Alert"),
+        ("approval", "Approval"),
         ("other", "Other"),
     )
 
