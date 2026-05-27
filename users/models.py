@@ -258,6 +258,7 @@ class Notification(models.Model):
         ("sale", "Sale"),
         ("product", "Product"),
         ("user", "User"),
+        ("chat", "Chat"),
         ("other", "Other"),
     )
 
@@ -312,3 +313,19 @@ class Movement(models.Model):
         who = self.changed_by.full_name if self.changed_by else 'Unknown'
         product_name = self.product_name or (self.product.name if self.product else 'Produit inconnu')
         return f"Movement {product_name}: {self.change} by {who} at {self.created_at}"
+
+
+class ChatMessage(models.Model):
+    sender = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="sent_chat_messages")
+    recipient = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="received_chat_messages", null=True, blank=True)
+    room_name = models.CharField(max_length=100, default="general")
+    content = models.TextField()
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["timestamp"]
+
+    def __str__(self):
+        recipient_str = self.recipient.email if self.recipient else "General"
+        return f"{self.sender.email} -> {recipient_str}: {self.content[:30]}"
+

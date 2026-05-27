@@ -3,13 +3,13 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from django.db.models import Sum, F, DecimalField, Count, Value
+from django.db.models import Sum, F, DecimalField, Count, Value, Q
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from datetime import timedelta
 
-from .models import CustomUser, Product, MagasinProfile, Sale, EmployerProfile, AdminProfile, Movement
-from .serializers import RegisterSerializer, ProductSerializer, SaleSerializer, MovementSerializer, NotificationSerializer, MagasinProfileSerializer
+from .models import CustomUser, Product, MagasinProfile, Sale, EmployerProfile, AdminProfile, Movement, ChatMessage
+from .serializers import RegisterSerializer, ProductSerializer, SaleSerializer, MovementSerializer, NotificationSerializer, MagasinProfileSerializer, ChatMessageSerializer
 from .permissions import IsAdmin
 from rest_framework_simplejwt.views import TokenViewBase
 from .authentication import CustomTokenObtainPairSerializer
@@ -560,17 +560,17 @@ class NotificationViewSet(viewsets.ModelViewSet):
         elif user.role == 'magasin':
             try:
                 magasin = MagasinProfile.objects.get(user=user)
-                return qs.filter(magasin=magasin)
+                return qs.filter(Q(magasin=magasin) | Q(user=user)).distinct()
             except MagasinProfile.DoesNotExist:
-                return Notification.objects.none()
+                return qs.filter(user=user)
         elif user.role == 'employer':
             try:
                 employer = EmployerProfile.objects.filter(user=user).first()
                 if employer and employer.magasin:
-                    return qs.filter(magasin=employer.magasin)
+                    return qs.filter(Q(magasin=employer.magasin) | Q(user=user)).distinct()
             except Exception:
                 pass
-            return Notification.objects.none()
+            return qs.filter(user=user)
 
     @action(detail=False, methods=['post'], url_path='mark-all-read')
     def mark_all_read(self, request):
@@ -1204,3 +1204,61 @@ class MagasinViewSet(viewsets.ModelViewSet):
         instance.save()
         serializer = self.get_serializer(instance)
         return Response(serializer.data)
+
+
+# =========================
+# CHAT VIEWS
+# =========================
+class ChatUsersListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        users = CustomUser.objects.filter(is_confirmed=True).exclude(id=request.user.id)
+        data = []
+        for u in users:
+            user_info = {
+                "id": u.id,
+                "full_name": u.full_name,
+                "email": u.email,
+                "role": u.role,
+            }
+            if u.role == "magasin":
+                try:
+                    user_info["shop_name"] = u.magasin_profile.shop_name
+                except Exception:
+                    pass
+            elif u.role == "employer":
+                try:
+                    user_info["shop_name"] = u.employer_profile.magasin.shop_name
+                except Exception:
+                    pass
+            data.append(user_info)
+        return Response(data)
+
+
+class ChatMessageHistoryView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from django.db.models import Q
+        room_name = request.query_params.get("room_name", "general")
+        recipient_id = request.query_params.get("recipient_id")
+
+        if recipient_id:
+            try:
+                recipient = CustomUser.objects.get(id=recipient_id)
+                messages = ChatMessage.objects.filter(
+                    Q(sender=request.user, recipient=recipient) |
+                    Q(sender=recipient, recipient=request.user)
+                ).order_by("timestamp")
+            except CustomUser.DoesNotExist:
+                return Response({"error": "Destinataire introuvable"}, status=404)
+        else:
+            messages = ChatMessage.objects.filter(room_name=room_name, recipient__isnull=True).order_by("timestamp")
+
+        # Take last 100 messages
+        total_count = messages.count()
+        messages = messages[max(0, total_count - 100):]
+        serializer = ChatMessageSerializer(messages, many=True)
+        return Response(serializer.data)
+

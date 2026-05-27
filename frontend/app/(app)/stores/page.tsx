@@ -146,7 +146,7 @@ export default function StoresPage() {
         formData.append('shop_logo', editStoreLogoFile);
       }
       
-      await djangoClient.patchFormData(`/magasins/${editingStore.magasin_id}/`, formData);
+      await djangoClient.patchFormData(`/users/magasins/${editingStore.magasin_id}/`, formData);
       toast.success('Magasin mis à jour avec succès');
       setIsEditStoreDialogOpen(false);
       fetchData();
@@ -377,7 +377,11 @@ export default function StoresPage() {
               >
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="flex items-center gap-2">
-                    <Store className="h-5 w-5" />
+                    {store.shop_logo ? (
+                      <img src={store.shop_logo} alt="logo" className="h-5 w-5 rounded-full object-cover" />
+                    ) : (
+                      <Store className="h-5 w-5" />
+                    )}
                     {store.shop_name}
                   </CardTitle>
                   {isAdmin && (

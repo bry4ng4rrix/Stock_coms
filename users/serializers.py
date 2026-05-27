@@ -8,6 +8,7 @@ from .models import (
     Notification,
     Sale,
     Movement,
+    ChatMessage,
 )
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -192,7 +193,40 @@ class NotificationSerializer(serializers.ModelSerializer):
 
 
 class MagasinProfileSerializer(serializers.ModelSerializer):
+    shop_logo = serializers.SerializerMethodField()
+
     class Meta:
         model = MagasinProfile
         fields = ["id", "shop_name", "shop_logo", "admin", "user"]
         read_only_fields = ["id", "admin", "user"]
+
+    def get_shop_logo(self, obj):
+        request = self.context.get('request')
+        if obj.shop_logo and request:
+            return request.build_absolute_uri(obj.shop_logo.url)
+        return None
+
+
+class ChatMessageSerializer(serializers.ModelSerializer):
+    sender_name = serializers.CharField(source="sender.full_name", read_only=True)
+    sender_email = serializers.CharField(source="sender.email", read_only=True)
+    sender_role = serializers.CharField(source="sender.role", read_only=True)
+    recipient_name = serializers.CharField(source="recipient.full_name", read_only=True)
+    recipient_email = serializers.CharField(source="recipient.email", read_only=True)
+
+    class Meta:
+        model = ChatMessage
+        fields = [
+            "id",
+            "sender",
+            "sender_name",
+            "sender_email",
+            "sender_role",
+            "recipient",
+            "recipient_name",
+            "recipient_email",
+            "room_name",
+            "content",
+            "timestamp",
+        ]
+        read_only_fields = ["id", "timestamp"]

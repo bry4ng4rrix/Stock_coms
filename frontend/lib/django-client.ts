@@ -570,6 +570,20 @@ class DjangoAPIClient {
     },
   }
 
+  // ==================== Chat Service ====================
+  chat = {
+    users: async () => {
+      return this.get<any[]>('/users/chat/users/')
+    },
+    history: async (params?: { recipient_id?: number; room_name?: string }) => {
+      const urlParams = new URLSearchParams()
+      if (params?.recipient_id) urlParams.append('recipient_id', params.recipient_id.toString())
+      if (params?.room_name) urlParams.append('room_name', params.room_name)
+      const query = urlParams.toString() ? `?${urlParams.toString()}` : ''
+      return this.get<any[]>(`/users/chat/history/${query}`)
+    }
+  }
+
   // ==================== Token Status ====================
   isAuthenticated(): boolean {
     return !!this.tokens?.access

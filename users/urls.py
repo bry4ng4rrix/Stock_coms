@@ -23,6 +23,8 @@ from .views import (
     ChangePasswordView,
     NotificationViewSet,
     MagasinViewSet,
+    ChatUsersListView,
+    ChatMessageHistoryView,
 )
 
 from rest_framework_simplejwt.views import TokenRefreshView
@@ -74,4 +76,8 @@ urlpatterns = [
     path("reject/<int:user_id>/", RejectUserView.as_view()),
     # Explore endpoints
     path("endpoints/", ApiEndpointsListView.as_view()),
+    # Chat endpoints
+    path("chat/users/", ChatUsersListView.as_view()),
+    path("chat/history/", ChatMessageHistoryView.as_view()),
 ] + router.urls
+
