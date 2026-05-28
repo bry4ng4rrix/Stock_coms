@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, DragEvent } from 'react';
+import { useEffect, useState, useCallback, useRef, DragEvent, ChangeEvent } from 'react';
 import Link from 'next/link';
 import { djangoClient } from '@/lib/django-client';
 import { Button } from '@/components/ui/button';
@@ -93,6 +93,10 @@ export default function ProductsPage() {
   const [saving, setSaving] = useState(false);
   const [previewProduct, setPreviewProduct] = useState<any | null>(null);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+
+  const [importing, setImporting] = useState(false);
+  const [importErrors, setImportErrors] = useState<string[]>([]);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);
@@ -200,6 +204,111 @@ export default function ProductsPage() {
     XLSX.utils.book_append_sheet(wb, ws, 'Produits');
     XLSX.writeFile(wb, `produits_${new Date().toISOString().split('T')[0]}.xlsx`);
     toast.success('Export Excel réussi !');
+  };
+
+  const parseExcelDate = (value: any) => {
+    if (value == null) return '';
+    const str = String(value).trim();
+    if (!str) return '';
+    const date = new Date(str);
+    if (isNaN(date.getTime())) return '';
+    return date.toISOString().split('T')[0];
+  };
+
+  const handleImportExcel = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!/\.(xlsx|xls)$/i.test(file.name)) {
+      toast.error('Sélectionnez un fichier Excel (.xlsx ou .xls)');
+      event.target.value = '';
+      return;
+    }
+
+    setImporting(true);
+    setImportErrors([]);
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: 'array' });
+      if (workbook.SheetNames.length === 0) {
+        throw new Error('Le fichier Excel ne contient aucune feuille.');
+      }
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet, { defval: '' });
+      if (rows.length === 0) {
+        throw new Error('Aucune ligne détectée dans le fichier Excel.');
+      }
+
+      const requiredHeaders = ['Référence', 'Nom', 'Catégorie', 'Prix vente (Ar)', 'Prix achat (Ar)'];
+      const rowHeaders = Object.keys(rows[0]).map((h) => String(h).trim());
+      const missingHeader = requiredHeaders.find((header) => !rowHeaders.includes(header));
+      if (missingHeader) {
+        throw new Error(`Colonne requise manquante : ${missingHeader}`);
+      }
+
+      const errors: string[] = [];
+      let importedCount = 0;
+      for (let index = 0; index < rows.length; index += 1) {
+        const row = rows[index];
+        const line = index + 2;
+        const reference = String(row['Référence'] ?? '').trim();
+        const name = String(row['Nom'] ?? '').trim();
+        const category = String(row['Catégorie'] ?? '').trim();
+        const shell_price = String(row['Prix vente (Ar)'] ?? '').trim();
+        const unit_price = String(row['Prix achat (Ar)'] ?? '').trim();
+        const initial_quantity = String(row['Quantité'] ?? '0').trim() || '0';
+        const alert_threshold = String(row['Seuil alerte'] ?? '5').trim() || '5';
+        const brand = String(row['Marque'] ?? '').trim();
+        const description = String(row['Description'] ?? '').trim();
+        const expiry_date = parseExcelDate(row['Date péremption'] ?? '');
+        const magasin = String(row['Magasin'] ?? '').trim();
+
+        if (!reference || !name || !category || !shell_price || !unit_price) {
+          errors.push(`Ligne ${line} : champs obligatoires manquants`);
+          continue;
+        }
+        if (isAdmin && !magasin) {
+          errors.push(`Ligne ${line} : colonne Magasin requise pour les admins`);
+          continue;
+        }
+
+        const fd = new FormData();
+        fd.append('reference', reference);
+        fd.append('name', name);
+        fd.append('category', category);
+        fd.append('shell_price', shell_price);
+        fd.append('unit_price', unit_price);
+        fd.append('initial_quantity', initial_quantity);
+        fd.append('alert_threshold', alert_threshold);
+        if (brand) fd.append('brand', brand);
+        if (description) fd.append('description', description);
+        if (expiry_date) fd.append('expiry_date', expiry_date);
+        if (isAdmin && magasin) fd.append('magasin', magasin);
+
+        try {
+          await djangoClient.postFormData('/users/products/', fd);
+          importedCount += 1;
+        } catch (err: any) {
+          errors.push(`Ligne ${line} : ${err.message || 'Erreur API'}`);
+        }
+      }
+
+      await fetchData();
+      if (importedCount > 0) {
+        toast.success(`${importedCount} produit(s) importé(s)`);
+      }
+      if (errors.length > 0) {
+        setImportErrors(errors);
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Erreur lors de l’import Excel');
+    } finally {
+      setImporting(false);
+      event.target.value = '';
+    }
+  };
+
+  const openImportDialog = () => {
+    fileInputRef.current?.click();
   };
 
   const handleAddProduct = async () => {
@@ -374,7 +483,17 @@ export default function ProductsPage() {
           <h1 className="text-3xl font-bold tracking-tight">Produits</h1>
           <p className="text-muted-foreground mt-1">Gestion du catalogue et des stocks</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls"
+            className="hidden"
+            onChange={handleImportExcel}
+          />
+          <Button variant="outline" size="sm" onClick={openImportDialog} disabled={importing}>
+            <Upload className="h-4 w-4 mr-2" />Importer
+          </Button>
           <Button variant="outline" size="sm" onClick={handleExportExcel}>
             <Download className="h-4 w-4 mr-2" />Exporter
           </Button>
@@ -400,6 +519,20 @@ export default function ProductsPage() {
             </Dialog>
           )}
         </div>
+      </div>
+      {importErrors.length > 0 && (
+        <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-800">
+          <p className="font-semibold">Erreurs d’import :</p>
+          <ul className="list-disc list-inside mt-2 space-y-1">
+            {importErrors.map((error, idx) => <li key={idx}>{error}</li>)}
+          </ul>
+        </div>
+      )}
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+        <p className="font-semibold">Colonnes Excel nécessaires :</p>
+        <p className="mt-2">Référence, Nom, Catégorie, Prix vente (Ar), Prix achat (Ar).</p>
+        <p className="mt-1">Colonnes optionnelles : Marque, Quantité, Seuil alerte, Date péremption, Description, Magasin.</p>
+        <p className="mt-1 text-xs text-muted-foreground">Pour un admin, la colonne Magasin doit contenir l’ID du magasin.</p>
       </div>
 
       {/* Expiry alert */}
