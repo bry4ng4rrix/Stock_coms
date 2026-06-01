@@ -3,7 +3,7 @@ services:
     name: django-api
     runtime: python
     buildCommand: "./build.sh"
-    startCommand: "gunicorn config.wsgi:application"
+    startCommand: "gunicorn stock.wsgi:application"
     envVars:
       - key: PYTHON_VERSION
         value: 3.12
