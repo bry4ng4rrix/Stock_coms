@@ -1,31 +1,26 @@
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
+def bool_env(value, default=False):
+    if value is None:
+        return default
+    return str(value).lower() in ("1", "true", "yes", "on")
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-a*5*d2=neje17enrzhe_cb9o8x6t6=h&)%#_y5knfdgce@@vpk'
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "django-insecure-dev-key")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = bool_env(os.environ.get("DEBUG", "True"))
 
-CORS_ALLOW_ALL_ORIGINS = True
-ALLOWED_HOSTS = ["157.173.103.147", "localhost", "127.0.0.1"]
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "http://157.173.103.147",
-    "http://157.173.103.147",
-    "https://157.173.103.147",
-    "https://157.173.103.147",
-]
-CSRF_TRUSTED_ORIGINS = [
-    "http://157.173.103.147",
-    "https://157.173.103.147"
-]
+
 
 # Application definition
 
@@ -88,15 +83,31 @@ CHANNEL_LAYERS = {
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+DATABASE_ENGINE = os.environ.get("DB_ENGINE", "django.db.backends.sqlite3")
+if DATABASE_ENGINE == "django.db.backends.postgresql":
+    DATABASES = {
+        "default": {
+            "ENGINE": DATABASE_ENGINE,
+            "NAME": os.environ.get("DB_NAME", "stock_db"),
+            "USER": os.environ.get("DB_USER", "stock"),
+            "PASSWORD": os.environ.get("DB_PASSWORD", "stock"),
+            "HOST": os.environ.get("DB_HOST", "db"),
+            "PORT": os.environ.get("DB_PORT", "5432"),
+        }
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
+    }
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
@@ -132,16 +143,33 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = 'static/'
-
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-CORS_ALLOW_ALL_ORIGINS = True
+
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
 }
+
+
+
+ALLOWED_HOSTS = [
+    "157.173.103.147",
+    "localhost",
+    "127.0.0.1",
+]
+
+CORS_ALLOW_ALL_ORIGINS = False
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://157.173.103.147:3000",
+]
+
+CSRF_TRUSTED_ORIGINS = [
+    "http://157.173.103.147",
+]
