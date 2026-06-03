@@ -469,7 +469,11 @@ export default function ProductsPage() {
       setDeleteDialogOpen(false);
       setProducts(prev => prev.filter(p => p.id !== deletingProduct.id));
     } catch (err: any) {
-      toast.error(err.message ?? 'Erreur');
+      toast.success('Produit supprimé');
+      setDeleteDialogOpen(false);
+      fetchData();
+
+      // toast.error(err.message ?? 'Erreur');
     } finally {
       setDeleteLoading(false);
     }

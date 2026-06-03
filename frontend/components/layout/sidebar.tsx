@@ -135,16 +135,17 @@ export function Sidebar() {
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-linear-to-br from-blue-500 to-cyan-600 flex items-center justify-center shadow-lg dark:from-blue-400 dark:to-cyan-500 overflow-hidden">
                 {user?.store_logo ? (
-                  <img src={user.store_logo} alt="Logo" className="w-full h-full object-cover" />
+                  <img src="/logo.jpeg" alt="Logo" className="w-full h-full object-cover" />
                 ) : (
-                  <Shirt className="h-6 w-6 text-white" />
+                  <img src="/logo.jpeg" alt="Logo" className="w-full h-full object-cover" />
+                  
                 )}
               </div>
               <div>
                 <h1 className="text-lg font-bold tracking-wide text-slate-900 dark:text-white truncate max-w-[140px]">
-                  {user?.store_name || 'VêteMart'}
+                  {user?.store_name || 'Valheri Wear'}
                 </h1>
-                <p className="text-xs text-slate-500 font-medium dark:text-slate-400">Gestion des stocks</p>
+                <p className="text-xs text-slate-500 font-medium dark:text-slate-400">Smart kajy</p>
               </div>
             </div>
           </div>
