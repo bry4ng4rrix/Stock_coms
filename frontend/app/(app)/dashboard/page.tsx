@@ -28,28 +28,28 @@ export default function DashboardPage() {
 
   // KPIs
   const [kpis, setKpis] = useState({
-    totalProducts:   0,
-    totalQuantity:   0,
-    totalValue:      0,
-    totalEmployees:  0,
-    lowStockCount:   0,
+    totalProducts: 0,
+    totalQuantity: 0,
+    totalValue: 0,
+    totalEmployees: 0,
+    lowStockCount: 0,
     outOfStockCount: 0,
-    mySalesToday:    0,
+    mySalesToday: 0,
     totalAmountSold: 0,
     totalSalesAllStores: 0,
-    clientsCount:    0,
-    totalProfit:     0,
+    clientsCount: 0,
+    totalProfit: 0,
     unpaidSalesCount: 0,
     unpaidAmount: 0,
   });
 
   // Charts
-  const [weeklyTrend, setWeeklyTrend]       = useState<any[]>([]);
-  const [categoryChart, setCategoryChart]   = useState<any[]>([]);
+  const [weeklyTrend, setWeeklyTrend] = useState<any[]>([]);
+  const [categoryChart, setCategoryChart] = useState<any[]>([]);
   const [recentMovements, setRecentMovements] = useState<any[]>([]);
   const [lowStockProducts, setLowStockProducts] = useState<any[]>([]);
   const [expiringProducts, setExpiringProducts] = useState<any[]>([]);
-  const [movementStats, setMovementStats] = useState<{fastest: any[], slowest: any[]}>({ fastest: [], slowest: [] });
+  const [movementStats, setMovementStats] = useState<{ fastest: any[], slowest: any[] }>({ fastest: [], slowest: [] });
 
   const fetchDashboard = useCallback(async () => {
     try {
@@ -66,9 +66,9 @@ export default function DashboardPage() {
       const rLists = dashboardData.lists || {};
 
       // Compute statistics and category mapping from products
-      let totalQuantity   = 0;
-      let totalValue      = 0;
-      let lowStockCount   = 0;
+      let totalQuantity = 0;
+      let totalValue = 0;
+      let lowStockCount = 0;
       let outOfStockCount = 0;
       const categoryMap: Record<string, number> = {};
       const lowProducts: any[] = [];
@@ -76,8 +76,8 @@ export default function DashboardPage() {
       products.forEach((p: any) => {
         const qty = p.initial_quantity ?? 0;
         totalQuantity += qty;
-        totalValue    += qty * (p.unit_price ?? 0);
-        
+        totalValue += qty * (p.unit_price ?? 0);
+
         const alertThreshold = p.alert_threshold ?? 5;
         if (qty === 0) {
           outOfStockCount++;
@@ -145,12 +145,12 @@ export default function DashboardPage() {
       const today = new Date();
       const thirtyDaysFromNow = new Date();
       thirtyDaysFromNow.setDate(today.getDate() + 30);
-      
+
       const expiring = products
         .filter((p: any) => p.expiry_date && new Date(p.expiry_date) <= thirtyDaysFromNow)
         .sort((a: any, b: any) => new Date(a.expiry_date!).getTime() - new Date(b.expiry_date!).getTime())
         .map((p: any) => ({ ...p, quantity: p.initial_quantity }));
-      
+
       setExpiringProducts(expiring.slice(0, 8));
 
       setRecentMovements(salesList.slice(0, 8));
@@ -217,6 +217,20 @@ export default function DashboardPage() {
           {user?.store_name ? `Magasin : ${user.store_name}` : 'Gestion des stocks cosmétiques'}
         </p>
       </div>
+
+      {user ? role === 'admin' ? (
+        <div>
+          kaiza e
+
+        </div>
+      ) : null : (
+        <div className="p-4 bg-yellow-50 text-yellow-800 rounded-md">
+          <AlertTriangle className="h-5 w-5 inline-block mr-2" />
+        </div>
+      )}
+
+
+
 
       {/* ── KPI Cards ─────────────────────────────────────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
@@ -343,9 +357,9 @@ export default function DashboardPage() {
         )}
       </div>
 
-      <AIAnalysis 
-        fastest={movementStats.fastest} 
-        slowest={movementStats.slowest} 
+      <AIAnalysis
+        fastest={movementStats.fastest}
+        slowest={movementStats.slowest}
         expiring={expiringProducts}
       />
 
@@ -503,9 +517,8 @@ export default function DashboardPage() {
                       <p className="text-xs text-muted-foreground font-mono">{p.sku}</p>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
-                      <span className={`text-sm font-semibold ${
-                        p.status === 'out_of_stock' ? 'text-red-600' : 'text-orange-600'
-                      }`}>
+                      <span className={`text-sm font-semibold ${p.status === 'out_of_stock' ? 'text-red-600' : 'text-orange-600'
+                        }`}>
                         {p.quantity ?? 0} u.
                       </span>
                       <Badge className={

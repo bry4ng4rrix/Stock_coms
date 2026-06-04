@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -24,10 +24,9 @@ export function TopBar() {
   const { user } = useCurrentUser();
   const [mounted, setMounted] = useState(false);
 
-  // avoid hydration mismatch on theme icon
-  if (typeof window !== 'undefined' && !mounted) {
+  useEffect(() => {
     setMounted(true);
-  }
+  }, []);
 
   const handleLogout = () => {
     djangoClient.auth.logout();
