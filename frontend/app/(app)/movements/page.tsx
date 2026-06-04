@@ -22,6 +22,8 @@ export default function MovementsPage() {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -44,39 +46,43 @@ export default function MovementsPage() {
   const filteredMovements = useMemo(() =>
     movements.filter(m => {
       const term = searchTerm.toLowerCase();
-      return !term ||
+      const mDateStr = m.created_at ? m.created_at.split('T')[0] : '';
+      const matchesTerm = !term ||
         (m.product_name || '').toLowerCase().includes(term) ||
         (m.changed_by_name || '').toLowerCase().includes(term) ||
         (m.magasin_name || '').toLowerCase().includes(term) ||
         (m.note || '').toLowerCase().includes(term);
+      const matchesStart = !startDate || mDateStr >= startDate;
+      const matchesEnd = !endDate || mDateStr <= endDate;
+      return matchesTerm && matchesStart && matchesEnd;
     }),
-    [movements, searchTerm]
+    [movements, searchTerm, startDate, endDate]
   );
 
   const movementStats = useMemo(() => {
-    const statsMap: Record<string, { name: string; qty: number }> = {};
-    movements.forEach(m => {
-      const name = m.product_name || 'Produit inconnu';
-      if (!statsMap[name]) statsMap[name] = { name, qty: 0 };
-      statsMap[name].qty += Math.abs(m.change || 0);
-    });
-    const sorted = Object.values(statsMap).sort((a, b) => b.qty - a.qty);
-    return {
-      fastest: sorted.slice(0, 5),
-      slowest: products
-        .filter(p => !sorted.some(s => s.name === p.name))
-        .slice(0, 5)
-        .map(p => ({ name: p.name, qty: 0 })),
-    };
-  }, [movements, products]);
+  const statsMap: Record<string, { name: string; qty: number }> = {};
+  filteredMovements.forEach(m => {
+    const name = m.product_name || 'Produit inconnu';
+    if (!statsMap[name]) statsMap[name] = { name, qty: 0 };
+    statsMap[name].qty += Math.abs(m.change || 0);
+  });
+  const sorted = Object.values(statsMap).sort((a, b) => b.qty - a.qty);
+  return {
+    fastest: sorted.slice(0, 5),
+    slowest: products
+      .filter(p => !sorted.some(s => s.name === p.name))
+      .slice(0, 5)
+      .map(p => ({ name: p.name, qty: 0 })),
+  };
+}, [filteredMovements, products]);
 
   const totalEntries = useMemo(() =>
-    movements.reduce((sum, m) => sum + (m.change > 0 ? m.change : 0), 0), [movements]);
+    filteredMovements.reduce((sum, m) => sum + (m.change > 0 ? m.change : 0), 0), [filteredMovements]);
 
   const totalExits = useMemo(() =>
-    movements.reduce((sum, m) => sum + (m.change < 0 ? Math.abs(m.change) : 0), 0), [movements]);
+    filteredMovements.reduce((sum, m) => sum + (m.change < 0 ? Math.abs(m.change) : 0), 0), [filteredMovements]);
 
-  const totalMovements = useMemo(() => movements.length, [movements]);
+  const totalMovements = useMemo(() => filteredMovements.length, [filteredMovements]);
 
   const formatDate = (d: string) =>
     new Date(d).toLocaleDateString('fr-FR', {
@@ -105,11 +111,25 @@ export default function MovementsPage() {
         </div>
         <div className="flex items-center gap-2">
           <Input
-            placeholder="Rechercher produit, vendeur..."
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            className="max-w-xs"
-          />
+  type="date"
+  placeholder="Date début"
+  value={startDate}
+  onChange={e => setStartDate(e.target.value)}
+  className="max-w-xs mr-2"
+/>
+<Input
+  type="date"
+  placeholder="Date fin"
+  value={endDate}
+  onChange={e => setEndDate(e.target.value)}
+  className="max-w-xs mr-2"
+/>
+<Input
+  placeholder="Rechercher produit, vendeur..."
+  value={searchTerm}
+  onChange={e => setSearchTerm(e.target.value)}
+  className="max-w-xs"
+/>
           <Button variant="outline" size="sm" onClick={fetchData} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Actualiser

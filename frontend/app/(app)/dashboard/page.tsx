@@ -218,17 +218,7 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      {user ? role === 'admin' ? (
-        <div>
-          kaiza e
-
-        </div>
-      ) : null : (
-        <div className="p-4 bg-yellow-50 text-yellow-800 rounded-md">
-          <AlertTriangle className="h-5 w-5 inline-block mr-2" />
-        </div>
-      )}
-
+     
 
 
 
@@ -285,7 +275,7 @@ export default function DashboardPage() {
           <>
             <div className="xl:col-span-2">
               <KpiCard
-                title="Ventes totales (tous magasins)"
+                title="Ventes totales "
                 value={`${fmt(kpis.totalSalesAllStores)} Ar`}
                 sub="Chiffre d'affaires global"
                 icon={TrendingUp}
@@ -300,15 +290,26 @@ export default function DashboardPage() {
                 icon={DollarSign}
               />
             </div>
-            <div className="xl:col-span-2">
-              <KpiCard
-                title="Bénéfice total"
-                value={`${fmt(kpis.totalProfit)} Ar`}
-                sub="Profit net (vente - achat)"
-                icon={CheckCircle2}
-                color="text-emerald-600"
-              />
-            </div>
+
+
+
+          {role === "admin" && (
+  <div className="xl:col-span-2">
+    <KpiCard
+      title="Bénéfice total"
+      value={`${fmt(kpis.totalProfit)} Ar`}
+      sub="Profit net (vente - achat)"
+      icon={CheckCircle2}
+      color="text-emerald-600"
+    />
+  </div>
+)}
+           
+
+
+
+
+
             <div className="xl:col-span-2">
               <KpiCard
                 title="Ventes impayées"
@@ -339,12 +340,17 @@ export default function DashboardPage() {
               sub="Total toutes références"
               icon={ShoppingBag}
             />
-            <KpiCard
-              title={role === 'admin' ? "Admins/Magasins" : "Employés actifs"}
+
+           {role === "admin" && (
+             <KpiCard
+              title="Admins/Magasins"
               value={kpis.totalEmployees}
               sub="Personnel enregistré"
               icon={Users}
             />
+           )}
+
+
             <KpiCard
               title="Alertes stock"
               value={kpis.lowStockCount + kpis.outOfStockCount}
