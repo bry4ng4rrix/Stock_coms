@@ -370,7 +370,100 @@ export default function StoresPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                 <Card
+              >
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="flex items-center gap-2">
+                    
+                    <div>
+                      Stock Locale
+                    </div>
+                  </CardTitle>
+                 
+                </CardHeader>
 
+                <CardContent className="space-y-4">
+
+                 
+                    <div className="border-b pb-3">
+                      <p className="font-medium">
+                        nom utilisateur
+                      </p>
+
+                      <p className="text-sm text-muted-foreground">
+                        email utilisateur
+                      </p>
+                    </div>
+                  
+
+                  <div className="grid grid-cols-2 gap-3">
+
+                    <div className="border rounded-lg p-3">
+                      <p className="text-xs text-muted-foreground">
+                        Produits
+                      </p>
+
+                      <p className="font-bold">
+                        stats produits
+                      </p>
+                    </div>
+
+                    <div className="border rounded-lg p-3">
+                      <p className="text-xs text-muted-foreground">
+                        Stock
+                      </p>
+
+                      <p className="font-bold">
+                      valeur stock
+                      </p>
+                    </div>
+
+                    <div className="border rounded-lg p-3">
+                      <p className="text-xs text-muted-foreground">
+                        Ventes
+                      </p>
+
+                      <p className="font-bold">
+                      valeur vente
+                      </p>
+                    </div>
+
+                    <div className="border rounded-lg p-3 bg-green-50">
+                      <p className="text-xs text-muted-foreground">
+                        Profit
+                      </p>
+
+                      <p className="font-bold text-green-700">
+                        profit
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="border-t pt-3">
+                    <p className="flex items-center gap-2 text-sm font-medium">
+                      <Users className="h-4 w-4" />
+                      Employés 
+                    </p>
+
+                    <div className="space-y-2 mt-2">
+                      
+                          <div
+                          
+                            className="flex justify-between items-center"
+                          >
+                            <span className="text-sm">
+                            nom employer
+                            </span>
+
+                            <Badge variant="outline">
+                              confirmer ou attent
+                            </Badge>
+                          </div>
+                        </div>
+                  </div>
+
+                </CardContent>
+              </Card>
             {stores.map((store) => (
               <Card
                 key={store.magasin_id}
