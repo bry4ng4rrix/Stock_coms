@@ -532,13 +532,7 @@ export default function ProductsPage() {
           </ul>
         </div>
       )}
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-        <p className="font-semibold">Colonnes Excel nécessaires :</p>
-        <p className="mt-2">Référence, Nom, Catégorie, Prix vente (Ar), Prix achat (Ar).</p>
-        <p className="mt-1">Colonnes optionnelles : Marque, Quantité, Seuil alerte, Date péremption, Description, Magasin.</p>
-        <p className="mt-1 text-xs text-muted-foreground">Pour un admin, la colonne Magasin doit contenir l’ID du magasin.</p>
-      </div>
-
+   
       {/* Expiry alert */}
       {expiringProducts.length > 0 && (
         <div className="rounded-lg border border-orange-300 bg-orange-50 dark:bg-orange-950/20 p-4">
@@ -1046,6 +1040,90 @@ function ProductForm({ form, setForm, isAdmin, stores = [], storesLoading = fals
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+         {isAdmin && (
+          <div className="space-y-2 md:col-span-2">
+            <Label>Magasin *</Label>
+            <Input
+              placeholder="Rechercher un magasin..."
+              value={storeFilter}
+              onChange={e => setStoreFilter(e.target.value)}
+            />
+            <Select
+              value={form.magasin ? String(form.magasin) : ''}
+              onValueChange={v => set('magasin', v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder={storesLoading ? 'Chargement des magasins...' : 'Choisir un magasin'} />
+              </SelectTrigger>
+              <SelectContent>
+                {storesLoading ? (
+                  <SelectItem value="__loading__" disabled>Chargement...</SelectItem>
+                ) : filteredStores.length > 0 ? (
+                  filteredStores.map(store => (
+                    <SelectItem key={store.magasin_id || store.id || store.shop_name} value={String(store.magasin_id || store.id || '')}>
+                      {store.shop_name || store.manager?.full_name || 'Magasin inconnu'}
+                    </SelectItem>
+                  ))
+                ) : (
+                  <SelectItem value="__none__" disabled>Aucun magasin trouvé</SelectItem>
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+      
+        <div className="space-y-2">
+          <Label>Référence / SKU *</Label>
+          <Input placeholder="Ex: CREM-001" value={form.reference || ''} onChange={e => set('reference', e.target.value)} />
+        </div>
+        <div className="space-y-2">
+          <Label>Nom du produit *</Label>
+          <Input placeholder="Ex: Crème hydratante" value={form.name || ''} onChange={e => set('name', e.target.value)} />
+        </div>
+        <div className="space-y-2">
+          <Label>Marque</Label>
+          <Input placeholder="Ex: L'Oréal" value={form.brand || ''} onChange={e => set('brand', e.target.value)} />
+        </div>
+        <div className="space-y-2">
+          <Label>Catégorie *</Label>
+          <Select value={form.category || ''} onValueChange={v => set('category', v)}>
+            <SelectTrigger><SelectValue placeholder="Choisir" /></SelectTrigger>
+            <SelectContent>{CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+          </Select>
+        </div>
+       
+        <div className="space-y-2 md:col-span-2">
+          <Label>Description</Label>
+          <Textarea placeholder="Description du produit..." rows={2} value={form.description || ''} onChange={e => set('description', e.target.value)} />
+        </div>
+        <div className="space-y-2">
+          <Label>Prix de vente (Ar) *</Label>
+          <Input type="number" step="0.01" placeholder="0.00" value={form.shell_price || ''} onChange={e => set('shell_price', e.target.value)} />
+        </div>
+        <div className="space-y-2">
+          <Label>Prix d'achat (Ar) *</Label>
+          <Input type="number" step="0.01" placeholder="0.00" value={form.unit_price || ''} onChange={e => set('unit_price', e.target.value)} />
+        </div>
+        <div className="space-y-2">
+          <Label>Quantité initiale</Label>
+          <Input type="number" min="0" placeholder="0" value={form.initial_quantity ?? ''} onChange={e => set('initial_quantity', e.target.value)} />
+        </div>
+        <div className="space-y-2">
+          <Label>Seuil d'alerte</Label>
+          <Input type="number" min="0" placeholder="5" value={form.alert_threshold ?? ''} onChange={e => set('alert_threshold', e.target.value)} />
+        </div>
+        <div className="space-y-2 md:col-span-2">
+          <Label className="flex items-center gap-2">
+            Date de péremption
+            <span className="text-xs font-normal text-muted-foreground">(optionnel)</span>
+          </Label>
+          <Input
+            type="date" value={form.expiry_date || ''}
+            onChange={e => set('expiry_date', e.target.value)}
+            min={new Date().toISOString().split('T')[0]}
+          />
+        </div>
+      </div>
         <div className="space-y-2 md:col-span-2">
           <Label>Image principale</Label>
           <input
@@ -1124,88 +1202,6 @@ function ProductForm({ form, setForm, isAdmin, stores = [], storesLoading = fals
           />
           {previewName('qr_code') && <p className="text-xs text-muted-foreground">Fichier actuel: {previewName('qr_code')}</p>}
         </div>
-        <div className="space-y-2">
-          <Label>Référence / SKU *</Label>
-          <Input placeholder="Ex: CREM-001" value={form.reference || ''} onChange={e => set('reference', e.target.value)} />
-        </div>
-        <div className="space-y-2">
-          <Label>Nom du produit *</Label>
-          <Input placeholder="Ex: Crème hydratante" value={form.name || ''} onChange={e => set('name', e.target.value)} />
-        </div>
-        <div className="space-y-2">
-          <Label>Marque</Label>
-          <Input placeholder="Ex: L'Oréal" value={form.brand || ''} onChange={e => set('brand', e.target.value)} />
-        </div>
-        <div className="space-y-2">
-          <Label>Catégorie *</Label>
-          <Select value={form.category || ''} onValueChange={v => set('category', v)}>
-            <SelectTrigger><SelectValue placeholder="Choisir" /></SelectTrigger>
-            <SelectContent>{CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
-          </Select>
-        </div>
-        {isAdmin && (
-          <div className="space-y-2 md:col-span-2">
-            <Label>Magasin *</Label>
-            <Input
-              placeholder="Rechercher un magasin..."
-              value={storeFilter}
-              onChange={e => setStoreFilter(e.target.value)}
-            />
-            <Select
-              value={form.magasin ? String(form.magasin) : ''}
-              onValueChange={v => set('magasin', v)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder={storesLoading ? 'Chargement des magasins...' : 'Choisir un magasin'} />
-              </SelectTrigger>
-              <SelectContent>
-                {storesLoading ? (
-                  <SelectItem value="__loading__" disabled>Chargement...</SelectItem>
-                ) : filteredStores.length > 0 ? (
-                  filteredStores.map(store => (
-                    <SelectItem key={store.magasin_id || store.id || store.shop_name} value={String(store.magasin_id || store.id || '')}>
-                      {store.shop_name || store.manager?.full_name || 'Magasin inconnu'}
-                    </SelectItem>
-                  ))
-                ) : (
-                  <SelectItem value="__none__" disabled>Aucun magasin trouvé</SelectItem>
-                )}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
-        <div className="space-y-2 md:col-span-2">
-          <Label>Description</Label>
-          <Textarea placeholder="Description du produit..." rows={2} value={form.description || ''} onChange={e => set('description', e.target.value)} />
-        </div>
-        <div className="space-y-2">
-          <Label>Prix de vente (Ar) *</Label>
-          <Input type="number" step="0.01" placeholder="0.00" value={form.shell_price || ''} onChange={e => set('shell_price', e.target.value)} />
-        </div>
-        <div className="space-y-2">
-          <Label>Prix d'achat (Ar) *</Label>
-          <Input type="number" step="0.01" placeholder="0.00" value={form.unit_price || ''} onChange={e => set('unit_price', e.target.value)} />
-        </div>
-        <div className="space-y-2">
-          <Label>Quantité initiale</Label>
-          <Input type="number" min="0" placeholder="0" value={form.initial_quantity ?? ''} onChange={e => set('initial_quantity', e.target.value)} />
-        </div>
-        <div className="space-y-2">
-          <Label>Seuil d'alerte</Label>
-          <Input type="number" min="0" placeholder="5" value={form.alert_threshold ?? ''} onChange={e => set('alert_threshold', e.target.value)} />
-        </div>
-        <div className="space-y-2 md:col-span-2">
-          <Label className="flex items-center gap-2">
-            Date de péremption
-            <span className="text-xs font-normal text-muted-foreground">(optionnel)</span>
-          </Label>
-          <Input
-            type="date" value={form.expiry_date || ''}
-            onChange={e => set('expiry_date', e.target.value)}
-            min={new Date().toISOString().split('T')[0]}
-          />
-        </div>
-      </div>
 
       <div className="flex justify-end gap-2 pt-2">
         <Button variant="outline" onClick={onCancel}>Annuler</Button>
