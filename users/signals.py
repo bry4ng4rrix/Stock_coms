@@ -68,13 +68,36 @@ def notification_created_broadcast(sender, instance: Notification, created, **kw
         }
         
         # Broadcast to admins
-        async_to_sync(channel_layer.group_send)(
-            "notifications_admin",
-            {
-                "type": "send_notification",
-                "notification": notif_data
-            }
-        )
+        admin_id = None
+        if instance.magasin:
+            admin_id = instance.magasin.admin.id
+        elif instance.user:
+            u = instance.user
+            if u.role == 'admin':
+                admin_id = u.id
+            elif u.role == 'magasin':
+                try:
+                    admin_id = u.magasin_profile.admin.id
+                except Exception:
+                    pass
+            elif u.role == 'employer':
+                try:
+                    ep = u.employer_profile
+                    if ep.admin:
+                        admin_id = ep.admin.id
+                    elif ep.magasin:
+                        admin_id = ep.magasin.admin.id
+                except Exception:
+                    pass
+
+        if admin_id:
+            async_to_sync(channel_layer.group_send)(
+                f"notifications_admin_{admin_id}",
+                {
+                    "type": "send_notification",
+                    "notification": notif_data
+                }
+            )
         
         # Broadcast to specific magasin group if applicable
         if instance.magasin:

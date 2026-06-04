@@ -20,7 +20,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 
-import { Store, Users, RefreshCw, Loader2 ,Edit} from 'lucide-react';
+import { Store, Users, RefreshCw, Loader2 ,Edit , ArrowLeftRight} from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function StoresPage() {
@@ -379,6 +379,10 @@ export default function StoresPage() {
                       Stock Locale
                     </div>
                   </CardTitle>
+                  <Button>
+                    Transfert 
+                    <ArrowLeftRight className="h-4 w-4 mr-2" />
+                  </Button>
                  
                 </CardHeader>
 

@@ -15,6 +15,27 @@ from rest_framework_simplejwt.views import TokenViewBase
 from .authentication import CustomTokenObtainPairSerializer
 from .models import Notification
 
+def get_user_admin(user):
+    if not user or user.is_anonymous:
+        return None
+    if user.role == "admin":
+        return user
+    elif user.role == "magasin":
+        try:
+            return user.magasin_profile.admin
+        except Exception:
+            return None
+    elif user.role == "employer":
+        try:
+            ep = user.employer_profile
+            if ep.admin:
+                return ep.admin
+            if ep.magasin:
+                return ep.magasin.admin
+        except Exception:
+            return None
+    return None
+
 
 def _sale_purchase_price(sale):
     purchase_price = sale.purchase_price
@@ -81,6 +102,31 @@ class ApproveUserView(APIView):
         current_user = request.user
         if current_user.role not in ["admin", "magasin"]:
             return Response({"error": "Permission refusée"}, status=403)
+
+        user_admin = get_user_admin(current_user)
+        if not user_admin:
+            return Response({"error": "Permission refusée : entreprise introuvable."}, status=403)
+
+        if current_user.role == "magasin":
+            try:
+                magasin = current_user.magasin_profile
+                is_member = CustomUser.objects.filter(
+                    id=user_id,
+                    role="employer",
+                    employer_profile__magasin=magasin
+                ).exists()
+                if not is_member:
+                    return Response({"error": "Permission refusée : cet employé n'appartient pas à votre magasin."}, status=403)
+            except Exception:
+                return Response({"error": "Magasin introuvable"}, status=404)
+        else: # admin
+            is_member = CustomUser.objects.filter(
+                Q(id=user_id),
+                Q(magasin_profile__admin=user_admin) | Q(employer_profile__admin=user_admin) | Q(employer_profile__magasin__admin=user_admin)
+            ).exists()
+            if not is_member:
+                return Response({"error": "Permission refusée : cet utilisateur n'appartient pas à votre entreprise."}, status=403)
+
         try:
             user = CustomUser.objects.get(id=user_id)
             user.is_confirmed = True
@@ -177,6 +223,19 @@ class Myprofile(APIView):
 class RoleManagementView(APIView):
     permission_classes = [IsAuthenticated, IsAdmin]
     def put(self, request, user_id):
+        current_user = request.user
+        user_admin = get_user_admin(current_user)
+        if not user_admin:
+            return Response({"error": "Permission refusée : entreprise introuvable."}, status=403)
+
+        # Verify user belongs to the same admin organization
+        is_member = CustomUser.objects.filter(
+            Q(id=user_id),
+            Q(magasin_profile__admin=user_admin) | Q(employer_profile__admin=user_admin) | Q(employer_profile__magasin__admin=user_admin)
+        ).exists()
+        if not is_member:
+            return Response({"error": "Permission refusée : cet utilisateur n'appartient pas à votre entreprise."}, status=403)
+
         try:
             user = CustomUser.objects.get(id=user_id)
             new_role = request.data.get("role")
@@ -200,8 +259,18 @@ class RoleManagementView(APIView):
 class TotalsView(APIView):
     permission_classes = [IsAuthenticated]
     def get(self, request):
-        total_unit = Product.objects.aggregate(total=Sum('unit_price'))['total'] or 0
-        total_shell = Product.objects.aggregate(total=Sum('shell_price'))['total'] or 0
+        user = request.user
+        if user.role == "admin":
+            products = Product.objects.filter(magasin__admin=user)
+        elif user.role == "magasin":
+            products = Product.objects.filter(magasin__user=user)
+        elif user.role == "employer":
+            products = Product.objects.filter(magasin__employers__user=user)
+        else:
+            products = Product.objects.none()
+
+        total_unit = products.aggregate(total=Sum('unit_price'))['total'] or 0
+        total_shell = products.aggregate(total=Sum('shell_price'))['total'] or 0
         return Response({
             'total_unit_price': total_unit,
             'total_shell_price': total_shell,
@@ -214,7 +283,8 @@ class ProfitView(APIView):
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def get(self, request):
-        revenue, cost, profit, _ = _sale_totals(Sale.objects.all())
+        sales_qs = Sale.objects.filter(magasin__admin=request.user)
+        revenue, cost, profit, _ = _sale_totals(sales_qs)
         return Response({
             'total_revenue': revenue,
             'total_cost': cost,
@@ -294,20 +364,40 @@ class SaleViewSet(viewsets.ModelViewSet):
         user = self.request.user
         base_qs = Sale.objects.select_related('product', 'magasin', 'seller')
         if user.role == "admin":
-            return base_qs
+            return base_qs.filter(magasin__admin=user)
         elif user.role == "magasin":
-            magasin = MagasinProfile.objects.get(user=user)
-            return base_qs.filter(product__magasin=magasin)
+            try:
+                magasin = MagasinProfile.objects.get(user=user)
+                return base_qs.filter(magasin=magasin)
+            except MagasinProfile.DoesNotExist:
+                return Sale.objects.none()
         elif user.role == "employer":
-            return base_qs.filter(product__magasin__employers__user=user)
+            return base_qs.filter(magasin__employers__user=user)
         return Sale.objects.none()
     def perform_create(self, serializer):
         validated = serializer.validated_data
+        product = validated.get('product')
+        user = self.request.user
+
+        # Security check: ensure the product belongs to the current user's company/store
+        if user.role == "admin":
+            if not product.magasin or product.magasin.admin != user:
+                raise serializers.ValidationError({"product": "Ce produit n'appartient pas à l'un de vos magasins."})
+        elif user.role == "magasin":
+            if not product.magasin or product.magasin.user != user:
+                raise serializers.ValidationError({"product": "Ce produit n'appartient pas à votre magasin."})
+        elif user.role == "employer":
+            try:
+                employer = EmployerProfile.objects.get(user=user)
+                if not product.magasin or product.magasin != employer.magasin:
+                    raise serializers.ValidationError({"product": "Ce produit n'appartient pas à votre magasin d'affectation."})
+            except EmployerProfile.DoesNotExist:
+                raise serializers.ValidationError({"detail": "Profil employé introuvable."})
+
         if validated.get('is_paid', True) and not validated.get('payment_date'):
             serializer.validated_data['payment_date'] = timezone.now()
         if not validated.get('is_paid', True) and not validated.get('payment_due_date'):
             serializer.validated_data['payment_due_date'] = (timezone.now().date() + timedelta(days=7))
-        product = validated.get('product')
         old_qty = product.initial_quantity or 0
         sale = serializer.save(seller=self.request.user, magasin=product.magasin)
         product.initial_quantity -= sale.quantity
@@ -333,7 +423,7 @@ class MovementViewSet(viewsets.ReadOnlyModelViewSet):
         user = self.request.user
         qs = Movement.objects.select_related('product', 'magasin', 'changed_by')
         if user.role == 'admin':
-            return qs
+            return qs.filter(product__magasin__admin=user)
         elif user.role == 'magasin':
             try:
                 magasin = MagasinProfile.objects.get(user=user)
@@ -360,10 +450,13 @@ class ProductViewSet(viewsets.ModelViewSet):
         user = self.request.user
         base_qs = Product.objects.select_related('magasin')
         if user.role == "admin":
-            return base_qs
+            return base_qs.filter(magasin__admin=user)
         elif user.role == "magasin":
-            magasin = MagasinProfile.objects.get(user=user)
-            return base_qs.filter(magasin=magasin)
+            try:
+                magasin = MagasinProfile.objects.get(user=user)
+                return base_qs.filter(magasin=magasin)
+            except MagasinProfile.DoesNotExist:
+                return Product.objects.none()
         elif user.role == "employer":
             return base_qs.filter(magasin__employers__user=user)
         return Product.objects.none()
@@ -371,20 +464,27 @@ class ProductViewSet(viewsets.ModelViewSet):
         user = self.request.user
         magasin = None
         if user.role == "magasin":
-            magasin = MagasinProfile.objects.get(user=user)
+            try:
+                magasin = MagasinProfile.objects.get(user=user)
+            except MagasinProfile.DoesNotExist:
+                raise serializers.ValidationError({"detail": "Profil magasin introuvable."})
         elif user.role == "admin":
             magasin_id = self.request.data.get("magasin")
             if magasin_id:
                 try:
-                    magasin = MagasinProfile.objects.get(id=magasin_id)
+                    magasin = MagasinProfile.objects.get(id=magasin_id, admin=user)
                 except MagasinProfile.DoesNotExist:
-                    pass
+                    raise serializers.ValidationError({"magasin": "Magasin introuvable ou invalide pour cet administrateur."})
+            else:
+                raise serializers.ValidationError({"magasin": "Le magasin est obligatoire pour créer un produit."})
         elif user.role == "employer":
             try:
                 employer = EmployerProfile.objects.get(user=user)
                 magasin = employer.magasin
+                if not magasin:
+                    raise serializers.ValidationError({"detail": "Aucun magasin associé à cet employé."})
             except EmployerProfile.DoesNotExist:
-                pass
+                raise serializers.ValidationError({"detail": "Profil employé introuvable."})
         product = serializer.save(magasin=magasin)
         Movement.objects.create(
             product=product,
@@ -556,7 +656,7 @@ class NotificationViewSet(viewsets.ModelViewSet):
         user = self.request.user
         qs = Notification.objects.select_related('magasin','product','sale','user')
         if user.role == 'admin':
-            return qs
+            return qs.filter(Q(magasin__admin=user) | Q(user=user)).distinct()
         elif user.role == 'magasin':
             try:
                 magasin = MagasinProfile.objects.get(user=user)
@@ -632,9 +732,9 @@ class UsersByMagasinView(APIView):
         user = request.user
         response_data = []
 
-        # Admin can see all magasins
+        # Admin can see all magasins belonging to them
         if user.role == "admin":
-            magasins = MagasinProfile.objects.all()
+            magasins = MagasinProfile.objects.filter(admin=user)
         # Magasin can see only their own magasin
         elif user.role == "magasin":
             magasins = MagasinProfile.objects.filter(user=user)
@@ -690,7 +790,7 @@ class MagasinStatsView(APIView):
         user = request.user
 
         if user.role == "admin":
-            magasins = MagasinProfile.objects.all()
+            magasins = MagasinProfile.objects.filter(admin=user)
         elif user.role == "magasin":
             magasins = MagasinProfile.objects.filter(user=user)
         elif user.role == "employer":
@@ -745,43 +845,48 @@ class DashboardView(APIView):
         today = timezone.now().date()
 
         if role == "admin":
-            # KPIs
-            total_revenue, _, total_profit, _ = _sale_totals(Sale.objects.all())
-            total_stock_value = Product.objects.aggregate(total=Sum(F('initial_quantity') * F('purchase_price'), output_field=DecimalField()))['total'] or 0
-            total_magasins = MagasinProfile.objects.count()
-            total_employers = EmployerProfile.objects.count()
-            total_products = Product.objects.count()
-            total_sales = Sale.objects.count()
-            sales_today = Sale.objects.filter(sold_at__date=today).count()
-            _, _, profit_today, _ = _sale_totals(Sale.objects.filter(sold_at__date=today))
-            low_stock_count = Product.objects.filter(initial_quantity__lte=F('alert_threshold')).count()
-            expired_count = Product.objects.filter(expiry_date__lt=today).count()
-            expiring_soon_count = Product.objects.filter(expiry_date__range=[today, today + timedelta(days=30)]).count()
-            unpaid_sales_count, unpaid_sales_value = _unpaid_sales_metrics(Sale.objects.all())
+            # KPIs scoped to admin
+            admin_sales = Sale.objects.filter(magasin__admin=user)
+            admin_products = Product.objects.filter(magasin__admin=user)
+            admin_magasins = MagasinProfile.objects.filter(admin=user)
+            admin_employers = EmployerProfile.objects.filter(Q(admin=user) | Q(magasin__admin=user))
 
-            # Lists
-            top_products = Sale.objects.values('product__name', 'product__magasin__shop_name').annotate(
+            total_revenue, _, total_profit, _ = _sale_totals(admin_sales)
+            total_stock_value = admin_products.aggregate(total=Sum(F('initial_quantity') * F('purchase_price'), output_field=DecimalField()))['total'] or 0
+            total_magasins = admin_magasins.count()
+            total_employers = admin_employers.count()
+            total_products = admin_products.count()
+            total_sales = admin_sales.count()
+            sales_today = admin_sales.filter(sold_at__date=today).count()
+            _, _, profit_today, _ = _sale_totals(admin_sales.filter(sold_at__date=today))
+            low_stock_count = admin_products.filter(initial_quantity__lte=F('alert_threshold')).count()
+            expired_count = admin_products.filter(expiry_date__lt=today).count()
+            expiring_soon_count = admin_products.filter(expiry_date__range=[today, today + timedelta(days=30)]).count()
+            unpaid_sales_count, unpaid_sales_value = _unpaid_sales_metrics(admin_sales)
+
+            # Lists scoped to admin
+            top_products = admin_sales.values('product__name', 'product__magasin__shop_name').annotate(
                 qty_sold=Sum('quantity'),
                 profit=Sum('total_profit')
             ).order_by('-qty_sold')[:5]
 
-            bottom_products = Product.objects.values('name', 'initial_quantity').annotate(
+            bottom_products = admin_products.values('name', 'initial_quantity').annotate(
                 qty_sold=Coalesce(Sum('sales__quantity'), 0)
             ).order_by('qty_sold')[:5]
 
-            low_stock_list = Product.objects.filter(initial_quantity__lte=F('alert_threshold')).values(
+            low_stock_list = admin_products.filter(initial_quantity__lte=F('alert_threshold')).values(
                 'name', 'initial_quantity', 'alert_threshold', 'magasin__shop_name'
             )[:5]
 
-            expired_list = Product.objects.filter(expiry_date__lt=today).values(
+            expired_list = admin_products.filter(expiry_date__lt=today).values(
                 'name', 'expiry_date', 'magasin__shop_name'
             )[:5]
 
-            expiring_soon_list = Product.objects.filter(expiry_date__range=[today, today + timedelta(days=30)]).values(
+            expiring_soon_list = admin_products.filter(expiry_date__range=[today, today + timedelta(days=30)]).values(
                 'name', 'expiry_date', 'magasin__shop_name'
             )[:5]
 
-            recent_sales_qs = Sale.objects.select_related('product', 'magasin', 'seller').order_by('-sold_at')[:5]
+            recent_sales_qs = admin_sales.select_related('product', 'magasin', 'seller').order_by('-sold_at')[:5]
             recent_sales = []
             for sale in recent_sales_qs:
                 recent_sales.append({
@@ -794,13 +899,13 @@ class DashboardView(APIView):
                     "sold_at": sale.sold_at
                 })
 
-            best_employees = Sale.objects.values('seller__full_name').annotate(
+            best_employees = admin_sales.values('seller__full_name').annotate(
                 sales_count=Count('id'),
                 total_amount=Sum('total_price'),
                 profit=Sum('total_profit')
             ).order_by('-total_amount')[:5]
 
-            best_shops = Sale.objects.values('magasin__shop_name').annotate(
+            best_shops = admin_sales.values('magasin__shop_name').annotate(
                 total_amount=Sum('total_price'),
                 sales_count=Count('id'),
                 total_stock=Coalesce(Sum('product__initial_quantity'), 0)
@@ -1100,7 +1205,10 @@ class PendingUsersView(APIView):
             return Response({"error": "Permission refusée"}, status=403)
 
         if user.role == "admin":
-            pending_qs = CustomUser.objects.filter(is_confirmed=False)
+            pending_qs = CustomUser.objects.filter(
+                Q(is_confirmed=False),
+                Q(magasin_profile__admin=user) | Q(employer_profile__admin=user) | Q(employer_profile__magasin__admin=user)
+            ).distinct()
         else:
             try:
                 magasin = MagasinProfile.objects.get(user=user)
@@ -1144,8 +1252,34 @@ class DeleteUserView(APIView):
     permission_classes = [IsAuthenticated]
 
     def delete(self, request, user_id):
-        if request.user.role not in ["admin", "magasin"]:
+        current_user = request.user
+        if current_user.role not in ["admin", "magasin"]:
             return Response({"error": "Permission refusée"}, status=403)
+
+        user_admin = get_user_admin(current_user)
+        if not user_admin:
+            return Response({"error": "Permission refusée : entreprise introuvable."}, status=403)
+
+        if current_user.role == "magasin":
+            try:
+                magasin = current_user.magasin_profile
+                is_member = CustomUser.objects.filter(
+                    id=user_id,
+                    role="employer",
+                    employer_profile__magasin=magasin
+                ).exists()
+                if not is_member:
+                    return Response({"error": "Permission refusée : cet employé n'appartient pas à votre magasin."}, status=403)
+            except Exception:
+                return Response({"error": "Magasin introuvable"}, status=404)
+        else: # admin
+            is_member = CustomUser.objects.filter(
+                Q(id=user_id),
+                Q(magasin_profile__admin=user_admin) | Q(employer_profile__admin=user_admin) | Q(employer_profile__magasin__admin=user_admin)
+            ).exists()
+            if not is_member:
+                return Response({"error": "Permission refusée : cet utilisateur n'appartient pas à votre entreprise."}, status=403)
+
         try:
             user = CustomUser.objects.get(id=user_id)
             if user.id == request.user.id:
@@ -1163,8 +1297,34 @@ class RejectUserView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, user_id):
-        if request.user.role not in ["admin", "magasin"]:
+        current_user = request.user
+        if current_user.role not in ["admin", "magasin"]:
             return Response({"error": "Permission refusée"}, status=403)
+
+        user_admin = get_user_admin(current_user)
+        if not user_admin:
+            return Response({"error": "Permission refusée : entreprise introuvable."}, status=403)
+
+        if current_user.role == "magasin":
+            try:
+                magasin = current_user.magasin_profile
+                is_member = CustomUser.objects.filter(
+                    id=user_id,
+                    role="employer",
+                    employer_profile__magasin=magasin
+                ).exists()
+                if not is_member:
+                    return Response({"error": "Permission refusée : cet employé n'appartient pas à votre magasin."}, status=403)
+            except Exception:
+                return Response({"error": "Magasin introuvable"}, status=404)
+        else: # admin
+            is_member = CustomUser.objects.filter(
+                Q(id=user_id),
+                Q(magasin_profile__admin=user_admin) | Q(employer_profile__admin=user_admin) | Q(employer_profile__magasin__admin=user_admin)
+            ).exists()
+            if not is_member:
+                return Response({"error": "Permission refusée : cet utilisateur n'appartient pas à votre entreprise."}, status=403)
+
         try:
             user = CustomUser.objects.get(id=user_id)
             user.delete()
@@ -1213,7 +1373,18 @@ class ChatUsersListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        users = CustomUser.objects.filter(is_confirmed=True).exclude(id=request.user.id)
+        user_admin = get_user_admin(request.user)
+        if not user_admin:
+            return Response([])
+
+        users = CustomUser.objects.filter(
+            Q(is_confirmed=True),
+            Q(id=user_admin.id) |
+            Q(magasin_profile__admin=user_admin) |
+            Q(employer_profile__admin=user_admin) |
+            Q(employer_profile__magasin__admin=user_admin)
+        ).exclude(id=request.user.id).distinct()
+
         data = []
         for u in users:
             user_info = {
@@ -1244,9 +1415,18 @@ class ChatMessageHistoryView(APIView):
         room_name = request.query_params.get("room_name", "general")
         recipient_id = request.query_params.get("recipient_id")
 
+        user_admin = get_user_admin(request.user)
+        if not user_admin:
+            return Response([])
+
         if recipient_id:
             try:
                 recipient = CustomUser.objects.get(id=recipient_id)
+                # Verify recipient belongs to the same admin organization
+                recipient_admin = get_user_admin(recipient)
+                if not recipient_admin or recipient_admin.id != user_admin.id:
+                    return Response({"error": "Permission refusée"}, status=403)
+
                 messages = ChatMessage.objects.filter(
                     Q(sender=request.user, recipient=recipient) |
                     Q(sender=recipient, recipient=request.user)
@@ -1254,7 +1434,8 @@ class ChatMessageHistoryView(APIView):
             except CustomUser.DoesNotExist:
                 return Response({"error": "Destinataire introuvable"}, status=404)
         else:
-            messages = ChatMessage.objects.filter(room_name=room_name, recipient__isnull=True).order_by("timestamp")
+            scoped_room = f"general_{user_admin.id}"
+            messages = ChatMessage.objects.filter(room_name=scoped_room, recipient__isnull=True).order_by("timestamp")
 
         # Take last 100 messages
         total_count = messages.count()

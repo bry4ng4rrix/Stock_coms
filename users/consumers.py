@@ -24,16 +24,26 @@ class ChatConsumer(AsyncWebsocketConsumer):
             await self.close()
             return
             
+        user_admin = await self.get_user_admin_async(self.user)
+        if not user_admin:
+            await self.close()
+            return
+
         # 2. Get room name: could be 'general' or 'dm_<user1_id>_<user2_id>'
         room_list = query_params.get("room")
-        self.room_name = room_list[0] if room_list else "general"
-        
+        raw_room = room_list[0] if room_list else "general"
+
         recipient_id_list = query_params.get("recipient_id")
         if recipient_id_list:
             try:
                 recipient_id = int(recipient_id_list[0])
                 self.recipient = await self.get_user_by_id(recipient_id)
                 if not self.recipient:
+                    await self.close()
+                    return
+                # Verify that the recipient belongs to the same admin organization
+                recipient_admin = await self.get_user_admin_async(self.recipient)
+                if not recipient_admin or recipient_admin.id != user_admin.id:
                     await self.close()
                     return
                 # Create a deterministic room name for the DM
@@ -44,7 +54,11 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 return
         else:
             self.recipient = None
-            
+            if raw_room == "general":
+                self.room_name = f"general_{user_admin.id}"
+            else:
+                self.room_name = raw_room
+
         self.room_group_name = f"chat_{self.room_name}"
         
         # 3. Join the room group
@@ -102,6 +116,28 @@ class ChatConsumer(AsyncWebsocketConsumer):
             return User.objects.get(id=user_id)
         except User.DoesNotExist:
             return None
+
+    @database_sync_to_async
+    def get_user_admin_async(self, user):
+        if not user or user.is_anonymous:
+            return None
+        if user.role == "admin":
+            return user
+        elif user.role == "magasin":
+            try:
+                return user.magasin_profile.admin
+            except Exception:
+                return None
+        elif user.role == "employer":
+            try:
+                ep = user.employer_profile
+                if ep.admin:
+                    return ep.admin
+                if ep.magasin:
+                    return ep.magasin.admin
+            except Exception:
+                return None
+        return None
             
     @database_sync_to_async
     def save_message(self, sender, recipient, room_name, content):
@@ -147,7 +183,7 @@ class NotificationConsumer(AsyncWebsocketConsumer):
         
         # 2. Join groups based on role
         if self.user.role == "admin":
-            group_name = "notifications_admin"
+            group_name = f"notifications_admin_{self.user.id}"
             await self.channel_layer.group_add(group_name, self.channel_name)
             self.groups_joined.append(group_name)
         else:
