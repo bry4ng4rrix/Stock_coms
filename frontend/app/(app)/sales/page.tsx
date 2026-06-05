@@ -950,6 +950,75 @@ export default function SalesPage() {
         </div>
       </div>
 
+      {/* Filtres par date */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex flex-col gap-4">
+            <Input
+              placeholder="Rechercher client, produit, vendeur..."
+              className="w-full sm:max-w-md"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="space-y-2 rounded-lg border border-border p-3 sm:p-4">
+                <p className="text-sm font-medium">Date de vente</p>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <Input
+                    type="date"
+                    value={saleStartDate}
+                    onChange={(e) => setSaleStartDate(e.target.value)}
+                    className="w-full"
+                    title="Vente — date début"
+                  />
+                  <Input
+                    type="date"
+                    value={saleEndDate}
+                    onChange={(e) => setSaleEndDate(e.target.value)}
+                    className="w-full"
+                    title="Vente — date fin"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2 rounded-lg border border-border p-3 sm:p-4">
+                <p className="text-sm font-medium">Date d&apos;échéance paiement</p>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <Input
+                    type="date"
+                    value={dueStartDate}
+                    onChange={(e) => setDueStartDate(e.target.value)}
+                    className="w-full"
+                    title="Échéance — date début"
+                  />
+                  <Input
+                    type="date"
+                    value={dueEndDate}
+                    onChange={(e) => setDueEndDate(e.target.value)}
+                    className="w-full"
+                    title="Échéance — date fin"
+                  />
+                </div>
+              </div>
+            </div>
+            {(saleStartDate || saleEndDate || dueStartDate || dueEndDate) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="self-start"
+                onClick={() => {
+                  setSaleStartDate('');
+                  setSaleEndDate('');
+                  setDueStartDate('');
+                  setDueEndDate('');
+                }}
+              >
+                Réinitialiser les dates
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
       {/* STATS */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <Card>
