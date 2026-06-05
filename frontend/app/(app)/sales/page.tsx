@@ -32,6 +32,13 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 import {
   Plus,
@@ -68,11 +75,17 @@ interface Product {
   id: number;
   name: string;
   reference?: string;
+  magasin?: number;
   sell_price?: number;
   sale_price?: number;
   shell_price?: number;
   initial_quantity: number;
   alert_threshold?: number;
+}
+
+interface Store {
+  magasin_id: number;
+  shop_name: string;
 }
 
 const fmt = (n: number) =>
@@ -81,17 +94,21 @@ const fmt = (n: number) =>
   }).format(Math.round(n));
 
 export default function SalesPage() {
-  const { user, isManager } = useCurrentUser();
+  const { user, isAdmin, isManager } = useCurrentUser();
 
   const [sales, setSales] = useState<Sale[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
+  const [saleProducts, setSaleProducts] = useState<Product[]>([]);
+  const [stores, setStores] = useState<Store[]>([]);
 
   const [loading, setLoading] = useState(true);
+  const [loadingSaleProducts, setLoadingSaleProducts] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
   // Dialog
   const [dialogOpen, setDialogOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [selectedStoreId, setSelectedStoreId] = useState<number | ''>('');
+  const [storeSearch, setStoreSearch] = useState('');
 
   // Form
   const [selectedProduct, setSelectedProduct] =
@@ -111,18 +128,42 @@ export default function SalesPage() {
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentDueDate, setPaymentDueDate] = useState('');
 
+  const activeStoreId = isAdmin
+    ? selectedStoreId
+    : (user?.magasin_id ?? user?.store_id ?? '');
+
+  const fetchStores = useCallback(async () => {
+    try {
+      const data = await djangoClient.get<Store[]>('/users/magasins/users/');
+      setStores(Array.isArray(data) ? data : []);
+    } catch (error: any) {
+      toast.error(error?.message || 'Erreur lors du chargement des magasins');
+    }
+  }, []);
+
+  const fetchSaleProducts = useCallback(async (magasinId: number) => {
+    setLoadingSaleProducts(true);
+    try {
+      const productsData = await djangoClient.products.list({ magasin_id: magasinId });
+      const storeProducts = (Array.isArray(productsData) ? productsData : []).filter(
+        (p) => Number(p.magasin) === Number(magasinId)
+      );
+      setSaleProducts(storeProducts);
+    } catch (error: any) {
+      toast.error(error?.message || 'Erreur lors du chargement des produits');
+      setSaleProducts([]);
+    } finally {
+      setLoadingSaleProducts(false);
+    }
+  }, []);
+
   // Fetch
   const fetchData = useCallback(async () => {
     setLoading(true);
 
     try {
-      const [salesData, productsData] = await Promise.all([
-        djangoClient.sales.list(),
-        djangoClient.products.list(),
-      ]);
-
+      const salesData = await djangoClient.sales.list();
       setSales(Array.isArray(salesData) ? salesData : []);
-      setProducts(Array.isArray(productsData) ? productsData : []);
     } catch (error: any) {
       toast.error(
         error?.message || 'Erreur lors du chargement des données'
@@ -135,6 +176,23 @@ export default function SalesPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    if (!dialogOpen) return;
+    if (isAdmin) {
+      fetchStores();
+      return;
+    }
+    const magasinId = user?.magasin_id ?? user?.store_id;
+    if (magasinId) {
+      fetchSaleProducts(magasinId);
+    }
+  }, [dialogOpen, isAdmin, user?.magasin_id, user?.store_id, fetchStores, fetchSaleProducts]);
+
+  useEffect(() => {
+    if (!dialogOpen || !isAdmin || !selectedStoreId) return;
+    fetchSaleProducts(selectedStoreId as number);
+  }, [dialogOpen, isAdmin, selectedStoreId, fetchSaleProducts]);
 
   // Filters
   const filteredSales = useMemo(() => {
@@ -150,11 +208,22 @@ export default function SalesPage() {
     });
   }, [sales, searchTerm]);
 
+  const filteredStores = useMemo(() => {
+    const term = storeSearch.toLowerCase();
+    return stores.filter(
+      (store) =>
+        !term || store.shop_name?.toLowerCase().includes(term)
+    );
+  }, [stores, storeSearch]);
+
   const filteredProducts = useMemo(() => {
     const term = productSearch.toLowerCase();
 
-    return products
+    return saleProducts
       .filter((product) => {
+        if (activeStoreId && Number(product.magasin) !== Number(activeStoreId)) {
+          return false;
+        }
         return (
           !term ||
           product.name?.toLowerCase().includes(term) ||
@@ -162,7 +231,7 @@ export default function SalesPage() {
         );
       })
       .filter((product) => product.initial_quantity > 0);
-  }, [products, productSearch]);
+  }, [saleProducts, productSearch, activeStoreId]);
 
   // Stats
   const todaySales = useMemo(() => {
@@ -219,9 +288,22 @@ export default function SalesPage() {
     setShowProductDropdown(false);
   };
 
+  const handleStoreChange = (value: string) => {
+    const storeId = value ? Number(value) : '';
+    setSelectedStoreId(storeId);
+    setSelectedProduct(null);
+    setProductSearch('');
+    setSalePrice('');
+    setShowProductDropdown(false);
+    setSaleProducts([]);
+  };
+
   // Reset form
   const resetForm = () => {
     setSelectedProduct(null);
+    setSelectedStoreId('');
+    setStoreSearch('');
+    setSaleProducts([]);
 
     setProductSearch('');
     setQuantity('1');
@@ -267,6 +349,11 @@ export default function SalesPage() {
     e: React.FormEvent<HTMLFormElement>
   ) => {
     e.preventDefault();
+
+    if (isAdmin && !selectedStoreId) {
+      toast.error('Veuillez sélectionner un magasin');
+      return;
+    }
 
     if (!selectedProduct) {
       toast.error('Veuillez sélectionner un produit');
@@ -419,7 +506,7 @@ export default function SalesPage() {
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2">
           <Input
             placeholder="Rechercher..."
             className="max-w-xs"
@@ -452,15 +539,15 @@ export default function SalesPage() {
           >
             <DialogTrigger asChild>
               <Button>
-                <Plus className="mr-2 h-4 w-4" />
-                Nouvelle vente
+                <Plus className=" h-4 w-4" />
+                Vendre
               </Button>
             </DialogTrigger>
 
             <DialogContent className="max-w-md">
               <DialogHeader>
                 <DialogTitle>
-                  Enregistrer une vente
+                  Vendre un produit
                 </DialogTitle>
 
                 <DialogDescription>
@@ -472,6 +559,47 @@ export default function SalesPage() {
                 onSubmit={handleCreateSale}
                 className="space-y-4"
               >
+                {isAdmin && (
+                  <div className="space-y-2">
+                    <Label>Magasin</Label>
+                    <Input
+                      placeholder="Rechercher un magasin..."
+                      value={storeSearch}
+                      onChange={(e) => setStoreSearch(e.target.value)}
+                    />
+                    <Select
+                      value={selectedStoreId ? String(selectedStoreId) : ''}
+                      onValueChange={handleStoreChange}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Choisir un magasin" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {filteredStores.length > 0 ? (
+                          filteredStores.map((store) => (
+                            <SelectItem
+                              key={store.magasin_id}
+                              value={String(store.magasin_id)}
+                            >
+                              {store.shop_name}
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <SelectItem value="__none__" disabled>
+                            Aucun magasin trouvé
+                          </SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                {!isAdmin && user?.shop_name && (
+                  <div className="rounded-md bg-muted/50 px-3 py-2 text-sm">
+                    Magasin : <strong>{user.shop_name}</strong>
+                  </div>
+                )}
+
                 {/* PRODUCT */}
                 <div className="space-y-2">
                   <Label>Produit</Label>
@@ -481,8 +609,19 @@ export default function SalesPage() {
 
                     <Input
                       className="pl-9"
-                      placeholder="Rechercher un produit..."
+                      placeholder={
+                        isAdmin && !selectedStoreId
+                          ? 'Sélectionnez d\'abord un magasin...'
+                          : loadingSaleProducts
+                          ? 'Chargement des produits...'
+                          : 'Rechercher un produit...'
+                      }
                       value={productSearch}
+                      disabled={
+                        (isAdmin && !selectedStoreId) ||
+                        loadingSaleProducts ||
+                        (!isAdmin && !activeStoreId)
+                      }
                       onChange={(e) => {
                         setProductSearch(e.target.value);
 
@@ -503,6 +642,8 @@ export default function SalesPage() {
                     />
 
                     {showProductDropdown &&
+                      !loadingSaleProducts &&
+                      activeStoreId &&
                       filteredProducts.length > 0 && (
                         <div className="absolute z-50 mt-1 max-h-52 w-full overflow-y-auto rounded-md border bg-background shadow-lg">
                           {filteredProducts.map((product) => (
@@ -556,6 +697,15 @@ export default function SalesPage() {
                           ))}
                         </div>
                       )}
+
+                    {showProductDropdown &&
+                      !loadingSaleProducts &&
+                      activeStoreId &&
+                      filteredProducts.length === 0 && (
+                        <div className="absolute z-50 mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm text-muted-foreground shadow-lg">
+                          Aucun produit en stock pour ce magasin
+                        </div>
+                      )}
                   </div>
                 </div>
 
@@ -604,16 +754,26 @@ export default function SalesPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Prix de vente</Label>
+                    <Label>
+                      Prix de vente
+                      {!isAdmin && (
+                        <span className="ml-1 text-xs font-normal text-muted-foreground">
+                          (non modifiable)
+                        </span>
+                      )}
+                    </Label>
 
                     <Input
                       type="number"
                       min="0"
                       step="0.01"
                       value={salePrice}
-                      onChange={(e) =>
-                        setSalePrice(e.target.value)
-                      }
+                      readOnly={!isAdmin}
+                      disabled={!isAdmin}
+                      onChange={(e) => {
+                        if (isAdmin) setSalePrice(e.target.value);
+                      }}
+                      className={!isAdmin ? 'bg-muted cursor-not-allowed' : ''}
                       required
                     />
                   </div>
