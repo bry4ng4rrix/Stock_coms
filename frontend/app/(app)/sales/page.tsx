@@ -551,16 +551,10 @@ export default function SalesPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <Input
-            placeholder="Rechercher..."
-            className="max-w-xs"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             variant="outline"
+            size="sm"
             onClick={() => fetchData()}
             disabled={loading}
           >
@@ -570,6 +564,16 @@ export default function SalesPage() {
               }`}
             />
             Actualiser
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportExcel}
+            disabled={loading || filteredSales.length === 0}
+          >
+            <Download className="mr-2 h-4 w-4" />
+            Exporter XLSX
           </Button>
 
           <Dialog
