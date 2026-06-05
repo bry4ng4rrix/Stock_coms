@@ -201,30 +201,7 @@ export default function MovementsPage() {
             )}
           </div>
         </div>
-        <div className="flex flex-col sm:flex-row flex-wrap gap-3">
-          <div className="flex flex-col sm:flex-row gap-2 flex-1 min-w-[200px]">
-            <Input
-              type="date"
-              value={startDate}
-              onChange={e => setStartDate(e.target.value)}
-              className="w-full sm:max-w-[160px]"
-              title="Date début"
-            />
-            <Input
-              type="date"
-              value={endDate}
-              onChange={e => setEndDate(e.target.value)}
-              className="w-full sm:max-w-[160px]"
-              title="Date fin"
-            />
-          </div>
-          <Input
-            placeholder="Rechercher produit, vendeur..."
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            className="w-full sm:max-w-xs"
-          />
-        </div>
+        
       </div>
 
       {/* KPI Cards */}
@@ -353,8 +330,32 @@ export default function MovementsPage() {
           </CardContent>
         </Card>
       </div>
-
+<div className='text-sm text-muted-foreground text-2xl font-bold'>Filtre mouvements par date</div>
       {/* History Table */}
+      <div className="flex flex-col sm:flex-row flex-wrap gap-3">
+          <div className="flex flex-col sm:flex-row gap-2 flex-1 min-w-[200px]">
+            <Input
+              type="date"
+              value={startDate}
+              onChange={e => setStartDate(e.target.value)}
+              className="w-full sm:max-w-[160px]"
+              title="Date début"
+            />
+            <Input
+              type="date"
+              value={endDate}
+              onChange={e => setEndDate(e.target.value)}
+              className="w-full sm:max-w-[160px]"
+              title="Date fin"
+            />
+          </div>
+          <Input
+            placeholder="Rechercher produit, vendeur..."
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            className="w-full sm:max-w-xs"
+          />
+        </div>
       <Card>
         <CardHeader>
           <CardTitle>Historique des mouvements de stock</CardTitle>
