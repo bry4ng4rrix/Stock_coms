@@ -143,6 +143,7 @@ class MovementSerializer(serializers.ModelSerializer):
     product_reference = serializers.CharField(source="product.reference", read_only=True)
     magasin_name = serializers.CharField(source="magasin.shop_name", read_only=True)
     changed_by_name = serializers.CharField(source="changed_by.full_name", read_only=True)
+    movement_type = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Movement
@@ -178,6 +179,9 @@ class MovementSerializer(serializers.ModelSerializer):
 
     def get_product_name(self, obj):
         return obj.product_name or (obj.product.name if obj.product else None)
+
+    def get_movement_type(self, obj):
+        return obj.movement_type
 
 
 class NotificationSerializer(serializers.ModelSerializer):
@@ -229,4 +233,4 @@ class ChatMessageSerializer(serializers.ModelSerializer):
             "content",
             "timestamp",
         ]
-        read_only_fields = ["id", "timestamp"]
+        read_only_fields = ["id", "timestamp"]

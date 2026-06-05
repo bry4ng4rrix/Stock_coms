@@ -25,6 +25,7 @@ from .views import (
     MagasinViewSet,
     ChatUsersListView,
     ChatMessageHistoryView,
+    TransferProductsView,
 )
 
 from rest_framework_simplejwt.views import TokenRefreshView
@@ -70,6 +71,8 @@ urlpatterns = [
     # Pending users (awaiting approval)
     path("change-password/", ChangePasswordView.as_view()),
     path("pending/", PendingUsersView.as_view()),
+    # Transfer products between stores
+    path("transfer/products/", TransferProductsView.as_view()),
     # Delete user
     path("delete/<int:user_id>/", DeleteUserView.as_view()),
     # Reject user

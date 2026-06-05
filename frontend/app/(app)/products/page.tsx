@@ -27,7 +27,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import * as XLSX from 'xlsx';
 
-const MEDIA_BASE = (process.env.NEXT_PUBLIC_DJANGO_API_URL || 'http://localhost:8000/api')
+const MEDIA_BASE = (process.env.NEXT_PUBLIC_DJANGO_API_URL || 'http://157.173.103.147:8000/api' || 'http://localhost:8000/api')
   .replace('/api', '');
 
 const CATEGORIES = [
@@ -1097,13 +1097,14 @@ function ProductForm({ form, setForm, isAdmin, stores = [], storesLoading = fals
           <Textarea placeholder="Description du produit..." rows={2} value={form.description || ''} onChange={e => set('description', e.target.value)} />
         </div>
         <div className="space-y-2">
+          <Label>Prix Unitaire (Ar) *</Label>
+          <Input type="number" step="0.01" placeholder="0.00" value={form.unit_price || ''} onChange={e => set('unit_price', e.target.value)} />
+        </div>
+        <div className="space-y-2">
           <Label>Prix de vente (Ar) *</Label>
           <Input type="number" step="0.01" placeholder="0.00" value={form.shell_price || ''} onChange={e => set('shell_price', e.target.value)} />
         </div>
-        <div className="space-y-2">
-          <Label>Prix d'achat (Ar) *</Label>
-          <Input type="number" step="0.01" placeholder="0.00" value={form.unit_price || ''} onChange={e => set('unit_price', e.target.value)} />
-        </div>
+        
         <div className="space-y-2">
           <Label>Quantité initiale</Label>
           <Input type="number" min="0" placeholder="0" value={form.initial_quantity ?? ''} onChange={e => set('initial_quantity', e.target.value)} />

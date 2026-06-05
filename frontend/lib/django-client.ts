@@ -1,7 +1,7 @@
 // Django Backend API Client with JWT Authentication
 // Handles all API calls to Django backend with automatic token management
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_DJANGO_API_URL || 'http://157.173.103.147:8000/api'
+const API_BASE_URL = process.env.NEXT_PUBLIC_DJANGO_API_URL || 'http://157.173.103.147:8000/api' || 'http://localhost:8000/api'
 
 interface AuthTokens {
   access: string
@@ -372,9 +372,13 @@ class DjangoAPIClient {
 
   // ==================== Products Service ====================
   products = {
-    list: async (filters?: { store_id?: number; category?: string }) => {
+    list: async (filters?: { store_id?: number; magasin_id?: number; category?: string }) => {
       const params = new URLSearchParams()
-      if (filters?.store_id) params.append('store_id', filters.store_id.toString())
+      const storeId = filters?.magasin_id ?? filters?.store_id
+      if (storeId) {
+        params.append('magasin_id', storeId.toString())
+        params.append('store_id', storeId.toString())
+      }
       if (filters?.category) params.append('category', filters.category)
       const query = params.toString() ? `?${params.toString()}` : ''
       return this.get<any[]>(`/users/products/${query}`)
@@ -519,8 +523,19 @@ class DjangoAPIClient {
     },
   }
 
-  // ==================== Stores Service ====================
-  stores = {
+  // ==================== Transfers Service ====================
+  transfers = {
+    transfer: async (
+      sourceId: number,
+      destinationId: number,
+      items: { product_id: number; quantity: number }[]
+    ) => {
+      return this.post<any>('/users/transfer/products/', {
+        source_magasin_id: sourceId,
+        destination_magasin_id: destinationId,
+        items,
+      })
+    },
     list: async () => {
       return this.get<any[]>('/users/magasins/users/')
     },

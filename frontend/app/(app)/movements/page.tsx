@@ -16,6 +16,26 @@ import { useCurrentUser } from '@/lib/auth/useCurrentUser';
 const fmt = (n: number) =>
   new Intl.NumberFormat('fr-MG', { minimumFractionDigits: 0 }).format(Math.round(n));
 
+const getMovementTypeBadgeClass = (type: string) => {
+  switch (type) {
+    case 'Entrée':
+      return 'bg-green-50 text-green-700';
+    case 'Sortie':
+      return 'bg-red-50 text-red-700';
+    case 'Transfert':
+      return 'bg-blue-50 text-blue-700';
+    default:
+      return 'bg-orange-50 text-orange-700';
+  }
+};
+
+const getChangeBadgeClass = (change: number, movementType: string) => {
+  if (movementType === 'Transfert') return 'bg-blue-50 text-blue-700';
+  if (change > 0) return 'bg-green-50 text-green-700';
+  if (change < 0) return 'bg-red-50 text-red-700';
+  return 'bg-orange-50 text-orange-700';
+};
+
 export default function MovementsPage() {
   const { user, isAdmin, isManager } = useCurrentUser();
   const [movements, setMovements] = useState<any[]>([]);
@@ -256,13 +276,7 @@ export default function MovementsPage() {
                       <TableCell>
                         <Badge
                           variant="outline"
-                          className={
-                            m.movement_type === 'Entrée'
-                              ? 'bg-green-50 text-green-700'
-                              : m.movement_type === 'Sortie'
-                              ? 'bg-red-50 text-red-700'
-                              : 'bg-orange-50 text-orange-700'
-                          }
+                          className={getMovementTypeBadgeClass(m.movement_type || 'Mise à jour')}
                         >
                           {m.movement_type || 'Mise à jour'}
                         </Badge>
@@ -270,13 +284,7 @@ export default function MovementsPage() {
                       <TableCell className="text-right font-medium">
                         <Badge
                           variant="outline"
-                          className={
-                            m.change > 0
-                              ? 'bg-green-50 text-green-700'
-                              : m.change < 0
-                              ? 'bg-red-50 text-red-700'
-                              : 'bg-orange-50 text-orange-700'
-                          }
+                          className={getChangeBadgeClass(m.change, m.movement_type || '')}
                         >
                           {m.change > 0 ? '+' : ''}{m.change}
                         </Badge>
@@ -359,13 +367,7 @@ function DailyMovementsTable({ groups, today, isManager }: { groups: Record<stri
                       <TableCell>
                         <Badge
                           variant="outline"
-                          className={
-                            m.movement_type === 'Entrée'
-                              ? 'bg-green-50 text-green-700'
-                              : m.movement_type === 'Sortie'
-                              ? 'bg-red-50 text-red-700'
-                              : 'bg-orange-50 text-orange-700'
-                          }
+                          className={getMovementTypeBadgeClass(m.movement_type || 'Mise à jour')}
                         >
                           {m.movement_type || 'Mise à jour'}
                         </Badge>
@@ -373,13 +375,7 @@ function DailyMovementsTable({ groups, today, isManager }: { groups: Record<stri
                       <TableCell className="text-right font-medium">
                         <Badge
                           variant="outline"
-                          className={
-                            m.change > 0
-                              ? 'bg-green-50 text-green-700'
-                              : m.change < 0
-                              ? 'bg-red-50 text-red-700'
-                              : 'bg-orange-50 text-orange-700'
-                          }
+                          className={getChangeBadgeClass(m.change, m.movement_type || '')}
                         >
                           {m.change > 0 ? '+' : ''}{m.change}
                         </Badge>

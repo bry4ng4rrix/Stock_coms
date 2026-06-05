@@ -90,6 +90,15 @@ class RegisterView(APIView):
         serializer = RegisterSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
+            # If the new user is an admin, create a default store (MagasinProfile) linked to this admin.
+            if user.role == "admin":
+                from .models import MagasinProfile
+                # Create a store with a default name; associate the admin as both the owner and manager.
+                MagasinProfile.objects.create(
+                    user=user,
+                    admin=user,
+                    shop_name=f"{user.full_name or user.username}'s Store"
+                )
             return Response({"message": "Inscription réussie", "id": user.id})
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -450,16 +459,36 @@ class ProductViewSet(viewsets.ModelViewSet):
         user = self.request.user
         base_qs = Product.objects.select_related('magasin')
         if user.role == "admin":
-            return base_qs.filter(magasin__admin=user)
+            qs = base_qs.filter(magasin__admin=user)
         elif user.role == "magasin":
             try:
                 magasin = MagasinProfile.objects.get(user=user)
-                return base_qs.filter(magasin=magasin)
+                qs = base_qs.filter(magasin=magasin)
             except MagasinProfile.DoesNotExist:
                 return Product.objects.none()
         elif user.role == "employer":
-            return base_qs.filter(magasin__employers__user=user)
-        return Product.objects.none()
+            qs = base_qs.filter(magasin__employers__user=user)
+        else:
+            return Product.objects.none()
+
+        store_id = self.request.query_params.get('store_id') or self.request.query_params.get('magasin_id')
+        if store_id:
+            qs = qs.filter(magasin_id=store_id)
+
+        category = self.request.query_params.get('category')
+        if category:
+            qs = qs.filter(category=category)
+
+        search = self.request.query_params.get('search')
+        if search:
+            qs = qs.filter(
+                Q(name__icontains=search)
+                | Q(reference__icontains=search)
+                | Q(brand__icontains=search)
+                | Q(category__icontains=search)
+            )
+
+        return qs
     def perform_create(self, serializer):
         user = self.request.user
         magasin = None
@@ -812,6 +841,9 @@ class MagasinStatsView(APIView):
             sales_qs = Sale.objects.filter(magasin=mag)
 
             total_products = products_qs.count()
+            total_stock_quantity = products_qs.aggregate(
+                total=Coalesce(Sum('initial_quantity'), 0)
+            )['total']
             total_stock_value = products_qs.aggregate(
                 total=Coalesce(Sum(F('initial_quantity') * F('purchase_price'), output_field=DecimalField()), 0, output_field=DecimalField())
             )['total']
@@ -825,6 +857,7 @@ class MagasinStatsView(APIView):
                 "magasin_id": mag.id,
                 "shop_name": mag.shop_name,
                 "total_products": total_products,
+                "total_stock_quantity": total_stock_quantity,
                 "total_stock_value": total_stock_value,
                 "total_sold_value": total_sold_value,
                 "profit": profit,
@@ -1443,3 +1476,124 @@ class ChatMessageHistoryView(APIView):
         serializer = ChatMessageSerializer(messages, many=True)
         return Response(serializer.data)
 
+class TransferProductsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def _unique_reference(self, base_ref, dest_id):
+        candidate = f"{base_ref}-TR{dest_id}"
+        counter = 1
+        while Product.objects.filter(reference=candidate).exists():
+            candidate = f"{base_ref}-TR{dest_id}-{counter}"
+            counter += 1
+        return candidate
+
+    def _normalize_items(self, request):
+        items = request.data.get("items")
+        if isinstance(items, list) and len(items) > 0:
+            return items
+        product_ids = request.data.get("product_ids", [])
+        if isinstance(product_ids, list) and len(product_ids) > 0:
+            return [{"product_id": pid, "quantity": None} for pid in product_ids]
+        return []
+
+    def post(self, request):
+        user = request.user
+        if user.role != "admin":
+            return Response({"error": "Permission refusée"}, status=403)
+        source_id = request.data.get("source_magasin_id")
+        destination_id = request.data.get("destination_magasin_id")
+        raw_items = self._normalize_items(request)
+        if not source_id or not destination_id or not raw_items:
+            return Response({"error": "Paramètres manquants ou invalides"}, status=400)
+        try:
+            source_magasin = MagasinProfile.objects.get(id=source_id, admin=user)
+            dest_magasin = MagasinProfile.objects.get(id=destination_id, admin=user)
+        except MagasinProfile.DoesNotExist:
+            return Response({"error": "Magasin source ou destination introuvable ou non autorisé"}, status=404)
+
+        transfer_note = f"Transfert du magasin {source_magasin.id} au magasin {dest_magasin.id} par {user.full_name}"
+
+        for raw_item in raw_items:
+            product_id = raw_item.get("product_id")
+            if not product_id:
+                return Response({"error": "Identifiant produit manquant"}, status=400)
+            try:
+                product = Product.objects.get(id=product_id, magasin=source_magasin)
+            except Product.DoesNotExist:
+                return Response({"error": "Certains produits n'appartiennent pas au magasin source"}, status=400)
+
+            stock = int(product.initial_quantity or 0)
+            requested_qty = raw_item.get("quantity")
+            quantity = stock if requested_qty is None else int(requested_qty)
+
+            if quantity <= 0:
+                return Response({"error": f"Quantité invalide pour {product.name}"}, status=400)
+            if quantity > stock:
+                return Response(
+                    {"error": f"Stock insuffisant pour {product.name}. Disponible : {stock}."},
+                    status=400,
+                )
+
+            if quantity == stock:
+                product.magasin = dest_magasin
+                product.save()
+                Movement.objects.create(
+                    product=product,
+                    product_name=product.name,
+                    magasin=dest_magasin,
+                    changed_by=user,
+                    previous_quantity=stock,
+                    new_quantity=stock,
+                    change=0,
+                    note=transfer_note,
+                )
+                continue
+
+            previous_qty = stock
+            product.initial_quantity = stock - quantity
+            product.save()
+            Movement.objects.create(
+                product=product,
+                product_name=product.name,
+                magasin=source_magasin,
+                changed_by=user,
+                previous_quantity=previous_qty,
+                new_quantity=product.initial_quantity,
+                change=-quantity,
+                note=f"{transfer_note} (sortie partielle)",
+            )
+
+            dest_product = Product.objects.filter(magasin=dest_magasin, name=product.name).first()
+            if dest_product:
+                dest_previous = int(dest_product.initial_quantity or 0)
+                dest_product.initial_quantity = dest_previous + quantity
+                dest_product.save()
+            else:
+                dest_product = Product.objects.create(
+                    name=product.name,
+                    reference=self._unique_reference(product.reference, dest_magasin.id),
+                    brand=product.brand,
+                    category=product.category,
+                    description=product.description,
+                    purchase_price=product.purchase_price,
+                    unit_price=product.unit_price,
+                    shell_price=product.shell_price,
+                    initial_quantity=quantity,
+                    alert_threshold=product.alert_threshold,
+                    expiry_date=product.expiry_date,
+                    magasin=dest_magasin,
+                )
+                dest_previous = 0
+
+            Movement.objects.create(
+                product=dest_product,
+                product_name=dest_product.name,
+                magasin=dest_magasin,
+                changed_by=user,
+                previous_quantity=dest_previous,
+                new_quantity=dest_product.initial_quantity,
+                change=quantity,
+                note=f"{transfer_note} (entrée partielle)",
+            )
+
+        return Response({"message": "Transfert effectué avec succès"})

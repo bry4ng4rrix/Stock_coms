@@ -301,6 +301,9 @@ class Movement(models.Model):
 
     @property
     def movement_type(self):
+        note = (self.note or "").lower()
+        if "transfert" in note:
+            return "Transfert"
         if self.change > 0:
             return "Entrée"
         if self.change < 0:
