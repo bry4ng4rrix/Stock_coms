@@ -259,6 +259,7 @@ class Notification(models.Model):
         ("product", "Product"),
         ("user", "User"),
         ("chat", "Chat"),
+        ("transfer", "Transfer"),
         ("other", "Other"),
     )
 

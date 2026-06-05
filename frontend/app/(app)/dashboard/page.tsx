@@ -11,7 +11,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 import {
-  Package, AlertTriangle, TrendingUp, DollarSign, Users, ShoppingBag,
+  Package, AlertTriangle, TrendingUp, DollarSign, Users,
   ArrowUp, ArrowDown, CheckCircle2,
 } from 'lucide-react';
 import { AIAnalysis } from '@/components/ai-analysis';
@@ -331,18 +331,14 @@ export default function DashboardPage() {
                 color="text-red-600"
               />
             </div>
-            <KpiCard
-              title="Produits"
-              value={kpis.totalProducts}
-              sub="Références en catalogue"
-              icon={Package}
-            />
-            <KpiCard
-              title="Unités en stock"
-              value={fmt(kpis.totalQuantity)}
-              sub="Total toutes références"
-              icon={ShoppingBag}
-            />
+            <div className="xl:col-span-2">
+              <KpiCard
+                title="Produits"
+                value={`${fmt(kpis.totalQuantity)} unité${kpis.totalQuantity > 1 ? 's' : ''} sur ${kpis.totalProducts} produit${kpis.totalProducts > 1 ? 's' : ''}`}
+                sub="Stock total du catalogue"
+                icon={Package}
+              />
+            </div>
 
            {role === "admin" && (
              <KpiCard

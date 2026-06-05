@@ -1,4 +1,4 @@
-import { Bell, Mail, Package, User, MessageSquare } from 'lucide-react';
+import { Bell, Mail, Package, User, MessageSquare, ArrowLeftRight } from 'lucide-react';
 
 export const typeIcon = (type: string) => {
   switch (type) {
@@ -6,6 +6,7 @@ export const typeIcon = (type: string) => {
     case 'user': return <User className="h-4 w-4" />;
     case 'product': return <Mail className="h-4 w-4" />;
     case 'chat': return <MessageSquare className="h-4 w-4" />;
+    case 'transfer': return <ArrowLeftRight className="h-4 w-4" />;
     default: return <Bell className="h-4 w-4" />;
   }
 };
@@ -16,6 +17,7 @@ export const typeLabel = (type: string) => {
     case 'product': return 'Produit';
     case 'user': return 'Utilisateur';
     case 'chat': return 'Chat';
+    case 'transfer': return 'Transfert';
     default: return 'Autre';
   }
 };
@@ -39,6 +41,8 @@ export const getTypeBadgeClass = (type: string) => {
       return 'bg-violet-500/10 text-violet-700 dark:text-violet-400 border-violet-500/20';
     case 'chat':
       return 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20';
+    case 'transfer':
+      return 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border-cyan-500/20';
     default:
       return 'bg-muted text-muted-foreground border-border';
   }

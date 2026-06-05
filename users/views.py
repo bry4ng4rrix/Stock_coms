@@ -8,7 +8,7 @@ from django.db.models.functions import Coalesce
 from django.utils import timezone
 from datetime import timedelta
 
-from .models import CustomUser, Product, MagasinProfile, Sale, EmployerProfile, AdminProfile, Movement, ChatMessage
+from .models import CustomUser, Product, MagasinProfile, Sale, EmployerProfile, AdminProfile, Movement, ChatMessage, Notification
 from .serializers import RegisterSerializer, ProductSerializer, SaleSerializer, MovementSerializer, NotificationSerializer, MagasinProfileSerializer, ChatMessageSerializer
 from .permissions import IsAdmin
 from rest_framework_simplejwt.views import TokenViewBase
@@ -738,18 +738,28 @@ class NotificationViewSet(viewsets.ModelViewSet):
         return super().partial_update(request, *args, **kwargs)
 
     def destroy(self, request, *args, **kwargs):
-        # allow deletion if admin or if related to user's magasin
         instance = self.get_object()
         user = request.user
+
         if user.role == 'admin':
             return super().destroy(request, *args, **kwargs)
-        if user.role in ['magasin','employer']:
+
+        if instance.user_id == user.id:
+            return super().destroy(request, *args, **kwargs)
+
+        if user.role in ['magasin', 'employer']:
+            magasin = None
             try:
-                magasin = MagasinProfile.objects.get(user=user) if user.role == 'magasin' else EmployerProfile.objects.get(user=user).magasin
+                if user.role == 'magasin':
+                    magasin = MagasinProfile.objects.get(user=user)
+                else:
+                    employer = EmployerProfile.objects.filter(user=user).first()
+                    magasin = employer.magasin if employer else None
             except Exception:
                 magasin = None
             if instance.magasin and magasin and instance.magasin.id == magasin.id:
                 return super().destroy(request, *args, **kwargs)
+
         return Response({"error": "Permission refusée"}, status=403)
 
 # =========================
@@ -1512,6 +1522,7 @@ class TransferProductsView(APIView):
             return Response({"error": "Magasin source ou destination introuvable ou non autorisé"}, status=404)
 
         transfer_note = f"Transfert du magasin {source_magasin.id} au magasin {dest_magasin.id} par {user.full_name}"
+        transferred_summary = []
 
         for raw_item in raw_items:
             product_id = raw_item.get("product_id")
@@ -1533,6 +1544,8 @@ class TransferProductsView(APIView):
                     {"error": f"Stock insuffisant pour {product.name}. Disponible : {stock}."},
                     status=400,
                 )
+
+            transferred_summary.append(f"{product.name} x{quantity}")
 
             if quantity == stock:
                 product.magasin = dest_magasin
@@ -1594,6 +1607,24 @@ class TransferProductsView(APIView):
                 new_quantity=dest_product.initial_quantity,
                 change=quantity,
                 note=f"{transfer_note} (entrée partielle)",
+            )
+
+        if transferred_summary:
+            preview = ", ".join(transferred_summary[:3])
+            if len(transferred_summary) > 3:
+                preview += f" (+{len(transferred_summary) - 3} autre(s))"
+
+            Notification.objects.create(
+                notif_type="transfer",
+                message=f"Transfert sortant vers {dest_magasin.shop_name} : {preview} — par {user.full_name}",
+                magasin=source_magasin,
+                user=user,
+            )
+            Notification.objects.create(
+                notif_type="transfer",
+                message=f"Transfert entrant depuis {source_magasin.shop_name} : {preview} — par {user.full_name}",
+                magasin=dest_magasin,
+                user=user,
             )
 
         return Response({"message": "Transfert effectué avec succès"})

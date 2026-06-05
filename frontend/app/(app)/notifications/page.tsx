@@ -98,9 +98,9 @@ export default function NotificationsPage() {
   const deleteNotification = async (id: number) => {
     try {
       setActionLoading(true);
-      await djangoClient.delete(`/users/notifications/${id}/`);
+      await djangoClient.notifications.delete(id);
+      setNotifications((prev) => prev.filter((n) => n.id !== id));
       toast.success('Notification supprimée.');
-      await fetchNotifications();
     } catch {
       toast.error('Impossible de supprimer la notification.');
     } finally {

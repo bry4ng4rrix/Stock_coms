@@ -150,39 +150,37 @@ class DjangoAPIClient {
     }
 
     if (!response.ok) {
-      const error = (await response.json()) as ApiErrorResponse
-      const message = error.detail
-        || (Array.isArray(error.non_field_errors) ? error.non_field_errors[0] : null)
-        || Object.entries(error).map(([k, v]) => `${k}: ${Array.isArray(v) ? v[0] : v}`).join(' | ')
-        || `API Error: ${response.status}`
-      throw new Error(message)
+      const contentType = response.headers.get('content-type') || ''
+      let errorMessage = `API Error: ${response.status}`
+      if (contentType.includes('application/json')) {
+        const error = (await response.json()) as ApiErrorResponse
+        errorMessage = error.detail
+          || (Array.isArray(error.non_field_errors) ? error.non_field_errors[0] : null)
+          || Object.entries(error).map(([k, v]) => `${k}: ${Array.isArray(v) ? v[0] : v}`).join(' | ')
+          || errorMessage
+      } else {
+        const text = await response.text()
+        if (text) errorMessage = text.slice(0, 200)
+      }
+      throw new Error(errorMessage)
     }
 
-    // After fetch, ensure response is JSON before parsing
-    const contentType = response.headers.get('content-type') || '';
-    if (!response.ok) {
-      // Attempt to extract error details if JSON, else fallback to text
-      let errorMessage = `API Error: ${response.status}`;
-      if (contentType.includes('application/json')) {
-        const error = await response.json();
-        const message = error.detail ||
-          (Array.isArray(error.non_field_errors) ? error.non_field_errors[0] : null) ||
-          Object.entries(error).map(([k, v]) => `${k}: ${Array.isArray(v) ? v[0] : v}`).join(' | ');
-        if (message) errorMessage = message;
-      } else {
-        const text = await response.text();
-        errorMessage = `Non-JSON error response: ${text.slice(0, 200)}`;
-      }
-      throw new Error(errorMessage);
+    // 204/205 and empty bodies are valid success responses (e.g. DELETE)
+    if (response.status === 204 || response.status === 205) {
+      return undefined as T
     }
-    // Successful response
+
+    const contentType = response.headers.get('content-type') || ''
+    const text = await response.text()
+    if (!text) {
+      return undefined as T
+    }
+
     if (contentType.includes('application/json')) {
-      return response.json();
+      return JSON.parse(text) as T
     }
-    // Unexpected content type
-    const text = await response.text();
-    throw new Error(`Unexpected non-JSON response: ${text.slice(0, 200)}`);
-    
+
+    return undefined as T
   }
 
   async get<T>(endpoint: string): Promise<T> {
@@ -467,9 +465,10 @@ class DjangoAPIClient {
     list: async () => this.get<any[]>('/users/notifications/'),
     markRead: async (id: number, isRead: boolean) => this.patch<any>(`/users/notifications/${id}/`, { is_read: isRead }),
     markAllRead: async () => this.post<any>('/users/notifications/mark-all-read/'),
-    deleteAll: async () => this.post<any>('/users/notifications/delete-all/'),
+    delete: async (id: number) => this.delete<void>(`/users/notifications/${id}/`),
+    deleteAll: async () => this.post<void>('/users/notifications/delete-all/'),
     bulkRead: async (ids: number[]) => this.post<any>('/users/notifications/bulk-read/', { ids }),
-    bulkDelete: async (ids: number[]) => this.post<any>('/users/notifications/bulk-delete/', { ids }),
+    bulkDelete: async (ids: number[]) => this.post<void>('/users/notifications/bulk-delete/', { ids }),
   }
 
   // ==================== Users Service ====================
