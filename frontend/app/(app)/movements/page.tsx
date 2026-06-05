@@ -5,6 +5,7 @@ import { djangoClient } from '@/lib/django-client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
@@ -47,6 +48,8 @@ export default function MovementsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [statsStartDate, setStatsStartDate] = useState('');
+  const [statsEndDate, setStatsEndDate] = useState('');
 
   const fetchData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -84,22 +87,47 @@ export default function MovementsPage() {
     [movements, searchTerm, startDate, endDate]
   );
 
+  const statsFilteredMovements = useMemo(() =>
+    movements.filter(m => {
+      const mDateStr = m.created_at ? m.created_at.split('T')[0] : '';
+      const matchesStart = !statsStartDate || mDateStr >= statsStartDate;
+      const matchesEnd = !statsEndDate || mDateStr <= statsEndDate;
+      return matchesStart && matchesEnd;
+    }),
+    [movements, statsStartDate, statsEndDate]
+  );
+
+  const statsPeriodLabel = useMemo(() => {
+    if (statsStartDate && statsEndDate) return `du ${statsStartDate} au ${statsEndDate}`;
+    if (statsStartDate) return `depuis le ${statsStartDate}`;
+    if (statsEndDate) return `jusqu'au ${statsEndDate}`;
+    return 'toute la période';
+  }, [statsStartDate, statsEndDate]);
+
   const movementStats = useMemo(() => {
-  const statsMap: Record<string, { name: string; qty: number }> = {};
-  filteredMovements.forEach(m => {
-    const name = m.product_name || 'Produit inconnu';
-    if (!statsMap[name]) statsMap[name] = { name, qty: 0 };
-    statsMap[name].qty += Math.abs(m.change || 0);
-  });
-  const sorted = Object.values(statsMap).sort((a, b) => b.qty - a.qty);
-  return {
-    fastest: sorted.slice(0, 5),
-    slowest: products
-      .filter(p => !sorted.some(s => s.name === p.name))
+    const soldMap: Record<string, { name: string; qty: number }> = {};
+    const movedProductNames = new Set<string>();
+
+    statsFilteredMovements.forEach(m => {
+      const name = m.product_name || 'Produit inconnu';
+      movedProductNames.add(name);
+      if (m.change < 0) {
+        if (!soldMap[name]) soldMap[name] = { name, qty: 0 };
+        soldMap[name].qty += Math.abs(m.change || 0);
+      }
+    });
+
+    const fastest = Object.values(soldMap)
+      .sort((a, b) => b.qty - a.qty)
+      .slice(0, 5);
+
+    const slowest = products
+      .filter(p => !movedProductNames.has(p.name))
       .slice(0, 5)
-      .map(p => ({ name: p.name, qty: 0 })),
-  };
-}, [filteredMovements, products]);
+      .map(p => ({ name: p.name, qty: 0 }));
+
+    return { fastest, slowest };
+  }, [statsFilteredMovements, products]);
 
   const totalEntries = useMemo(() =>
     filteredMovements.reduce((sum, m) => sum + (m.change > 0 ? m.change : 0), 0), [filteredMovements]);
@@ -234,22 +262,68 @@ export default function MovementsPage() {
       </div>
 
       {/* Stats */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Filtre statistiques produits</CardTitle>
+          <CardDescription>
+            Période analysée : {statsPeriodLabel}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col sm:flex-row flex-wrap gap-3 items-end">
+            <div className="space-y-1.5 w-full sm:w-auto">
+              <Label htmlFor="stats-start-date" className="text-xs text-muted-foreground">Date début</Label>
+              <Input
+                id="stats-start-date"
+                type="date"
+                value={statsStartDate}
+                onChange={(e) => setStatsStartDate(e.target.value)}
+                className="w-full sm:max-w-[180px]"
+              />
+            </div>
+            <div className="space-y-1.5 w-full sm:w-auto">
+              <Label htmlFor="stats-end-date" className="text-xs text-muted-foreground">Date fin</Label>
+              <Input
+                id="stats-end-date"
+                type="date"
+                value={statsEndDate}
+                min={statsStartDate || undefined}
+                onChange={(e) => setStatsEndDate(e.target.value)}
+                className="w-full sm:max-w-[180px]"
+              />
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setStatsStartDate('');
+                setStatsEndDate('');
+              }}
+              disabled={!statsStartDate && !statsEndDate}
+            >
+              Réinitialiser
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg flex items-center text-green-600">
+            <CardTitle className="text-lg flex items-center text-green-600 dark:text-green-400">
               <TrendingUp className="mr-2 h-5 w-5" />Produits les plus vendus
             </CardTitle>
+            <CardDescription>Sorties de stock sur la période ({statsPeriodLabel})</CardDescription>
           </CardHeader>
           <CardContent>
             {loading ? <Skeleton className="h-24 w-full" /> : (
               <div className="space-y-3">
                 {movementStats.fastest.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Aucun mouvement enregistré.</p>
+                  <p className="text-sm text-muted-foreground">Aucune vente enregistrée sur cette période.</p>
                 ) : movementStats.fastest.map((p, i) => (
                   <div key={i} className="flex justify-between items-center border-b pb-2 last:border-0">
                     <span className="font-medium text-sm">{p.name}</span>
-                    <Badge variant="outline" className="bg-green-50 text-green-700">{p.qty} unités</Badge>
+                    <Badge variant="outline" className="bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20">{p.qty} unités</Badge>
                   </div>
                 ))}
               </div>
@@ -258,19 +332,20 @@ export default function MovementsPage() {
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg flex items-center text-orange-600">
+            <CardTitle className="text-lg flex items-center text-orange-600 dark:text-orange-400">
             <ArrowDown className="mr-2 h-5 w-5" />Produits sans mouvement
             </CardTitle>
+            <CardDescription>Aucun mouvement sur la période ({statsPeriodLabel})</CardDescription>
           </CardHeader>
           <CardContent>
             {loading ? <Skeleton className="h-24 w-full" /> : (
               <div className="space-y-3">
                 {movementStats.slowest.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Tous les produits ont été mouvementés.</p>
+                  <p className="text-sm text-muted-foreground">Tous les produits ont eu au moins un mouvement sur cette période.</p>
                 ) : movementStats.slowest.map((p, i) => (
                   <div key={i} className="flex justify-between items-center border-b pb-2 last:border-0">
                     <span className="font-medium text-sm">{p.name}</span>
-                    <Badge variant="outline" className="bg-orange-50 text-orange-700">0 mouvement</Badge>
+                    <Badge variant="outline" className="bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-500/20">0 mouvement</Badge>
                   </div>
                 ))}
               </div>

@@ -544,11 +544,7 @@ export default function SalesPage() {
             Ventes
           </h1>
 
-          <p className="mt-1 text-muted-foreground">
-            {user?.full_name
-              ? `Bonjour, ${user.full_name}`
-              : 'Gestion des ventes'}
-          </p>
+          
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -1038,15 +1034,14 @@ export default function SalesPage() {
                   {todaySales.length}
                 </div>
 
-                <p className="text-xs text-muted-foreground">
-                  {fmt(todayRevenue)} Ar
-                </p>
+                
               </>
             )}
           </CardContent>
         </Card>
 
-        <Card>
+        {isAdmin && (
+          <Card>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-sm">
               <DollarSign className="h-4 w-4 text-green-500" />
@@ -1064,6 +1059,7 @@ export default function SalesPage() {
             )}
           </CardContent>
         </Card>
+        )}
 
         <Card>
           <CardHeader className="pb-2">

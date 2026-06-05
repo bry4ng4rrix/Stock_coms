@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef, DragEvent, ChangeEvent } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo, DragEvent, ChangeEvent } from 'react';
 import Link from 'next/link';
 import { djangoClient } from '@/lib/django-client';
 import { Button } from '@/components/ui/button';
@@ -14,8 +14,13 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import {
-  Plus, Download, Pencil, Trash2, X, ImagePlus, Upload, Loader2, AlertTriangle, QrCode, ShoppingCart,
+  Plus, Download, Pencil, Trash2, X, ImagePlus, Upload, Loader2, AlertTriangle, QrCode, ShoppingCart, ArrowLeftRight,
 } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  TransferProductsDialog,
+  type TransferCartItem,
+} from '@/components/transfer-products-dialog';
 import { toast } from 'sonner';
 import { useRealtimeRefresh } from '@/lib/hooks/useRealtimeRefresh';
 import { generateSimpleQRCode } from '@/lib/qrcode-generator';
@@ -88,6 +93,12 @@ export default function ProductsPage() {
   const [storesLoading, setStoresLoading] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedStatus, setSelectedStatus] = useState('all');
+  const [selectedStoreId, setSelectedStoreId] = useState('all');
+  const [selectedProductIds, setSelectedProductIds] = useState<Set<number>>(new Set());
+  const [transferDialogOpen, setTransferDialogOpen] = useState(false);
+  const [transferInitialCart, setTransferInitialCart] = useState<TransferCartItem[]>([]);
+
+  const connectedMagasinId = user?.magasin_id ?? user?.store_id;
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState({ ...EMPTY_FORM });
@@ -141,14 +152,24 @@ export default function ProductsPage() {
   const fetchData = useCallback(async (silent = false) => {
     try {
       if (!silent) setLoading(true);
-      const data = await djangoClient.products.list();
+      const filters: { magasin_id?: number } = {};
+      if (isAdmin) {
+        if (selectedStoreId !== 'all') {
+          filters.magasin_id = Number(selectedStoreId);
+        }
+      } else if (connectedMagasinId) {
+        filters.magasin_id = Number(connectedMagasinId);
+      }
+      const data = await djangoClient.products.list(
+        Object.keys(filters).length ? filters : undefined,
+      );
       setProducts(data);
     } catch (err: any) {
       if (!silent) toast.error('Erreur de chargement des produits: ' + err.message);
     } finally {
       if (!silent) setLoading(false);
     }
-  }, []);
+  }, [isAdmin, selectedStoreId, connectedMagasinId]);
 
   useRealtimeRefresh(['product', 'sale', 'movement'], () => fetchData(true));
 
@@ -167,10 +188,28 @@ export default function ProductsPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
   useEffect(() => {
-    if (isAdmin && dialogOpen) {
+    if (isAdmin) fetchStores();
+  }, [isAdmin, fetchStores]);
+  useEffect(() => {
+    if (isAdmin && dialogOpen && stores.length === 0) {
       fetchStores();
     }
-  }, [isAdmin, dialogOpen, fetchStores]);
+  }, [isAdmin, dialogOpen, stores.length, fetchStores]);
+
+  useEffect(() => {
+    setSelectedProductIds(new Set());
+  }, [selectedStoreId]);
+
+  const sourceStoreForTransfer = useMemo(() => {
+    if (!isAdmin || selectedStoreId === 'all') return null;
+    const store = stores.find((s) => String(s.magasin_id) === selectedStoreId);
+    if (!store) return null;
+    return {
+      magasin_id: store.magasin_id,
+      shop_name: store.shop_name,
+      shop_logo: store.shop_logo,
+    };
+  }, [isAdmin, selectedStoreId, stores]);
 
   const filteredProducts = products.filter(p => {
     const status = getStatus(p);
@@ -188,6 +227,55 @@ export default function ProductsPage() {
     out_of_stock: 'bg-red-100 text-red-800',
   }[s] ?? '');
   const statusLabel = (s: string) => ({ in_stock: 'En stock', low: 'Faible', out_of_stock: 'Rupture' }[s] ?? s);
+
+  const toggleProductSelection = (id: number) => {
+    setSelectedProductIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllProducts = () => {
+    if (selectedProductIds.size === filteredProducts.length && filteredProducts.length > 0) {
+      setSelectedProductIds(new Set());
+    } else {
+      setSelectedProductIds(new Set(filteredProducts.map((p) => p.id)));
+    }
+  };
+
+  const handleOpenTransfer = () => {
+    if (!sourceStoreForTransfer) {
+      toast.error('Sélectionnez d\'abord un magasin source dans le filtre');
+      return;
+    }
+    if (selectedProductIds.size === 0) {
+      toast.error('Sélectionnez au moins un produit à transférer');
+      return;
+    }
+    const cart = filteredProducts
+      .filter((p) => selectedProductIds.has(p.id))
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        reference: p.reference,
+        quantity: 1,
+        maxQuantity: Number(p.initial_quantity ?? 0),
+      }))
+      .filter((p) => p.maxQuantity > 0);
+    if (cart.length === 0) {
+      toast.error('Les produits sélectionnés n\'ont pas de stock disponible');
+      return;
+    }
+    setTransferInitialCart(cart);
+    setTransferDialogOpen(true);
+  };
+
+  const handleTransferSuccess = () => {
+    setSelectedProductIds(new Set());
+    fetchData();
+  };
 
   const handleExportExcel = () => {
     const rows = products.map(p => ({
@@ -509,6 +597,17 @@ export default function ProductsPage() {
               <QrCode className="h-4 w-4 mr-2" />Scanner QR
             </Link>
           </Button>
+          {isAdmin && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleOpenTransfer}
+              disabled={selectedProductIds.size === 0 || selectedStoreId === 'all'}
+            >
+              <ArrowLeftRight className="h-4 w-4 mr-2" />
+              Transférer{selectedProductIds.size > 0 ? ` (${selectedProductIds.size})` : ''}
+            </Button>
+          )}
           {canCreate && (
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
               <DialogTrigger asChild>
@@ -564,8 +663,33 @@ export default function ProductsPage() {
       )}
 
       {/* Filters */}
-      <div className="flex flex-col md:flex-row gap-4">
-        <Input placeholder="Rechercher par nom, référence ou marque..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="flex-1" />
+      <div className="flex flex-col md:flex-row flex-wrap gap-4">
+        <Input placeholder="Rechercher par nom, référence ou marque..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="flex-1 min-w-[200px]" />
+        {isAdmin ? (
+          <Select value={selectedStoreId} onValueChange={setSelectedStoreId}>
+            <SelectTrigger className="w-full md:w-52">
+              <SelectValue placeholder="Tous les magasins" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tous les magasins</SelectItem>
+              {storesLoading ? (
+                <SelectItem value="__loading__" disabled>Chargement...</SelectItem>
+              ) : (
+                stores.map((store) => (
+                  <SelectItem key={store.magasin_id} value={String(store.magasin_id)}>
+                    {store.shop_name}
+                  </SelectItem>
+                ))
+              )}
+            </SelectContent>
+          </Select>
+        ) : (
+          user?.shop_name && (
+            <div className="flex items-center rounded-md border bg-muted/50 px-3 py-2 text-sm whitespace-nowrap">
+              Magasin : <span className="font-medium ml-1">{user.shop_name}</span>
+            </div>
+          )
+        )}
         <Select value={selectedCategory} onValueChange={setSelectedCategory}>
           <SelectTrigger className="w-full md:w-52"><SelectValue /></SelectTrigger>
           <SelectContent>
@@ -586,7 +710,12 @@ export default function ProductsPage() {
 
       {/* Table */}
       <Card>
-        <CardHeader><CardTitle>Catalogue ({filteredProducts.length})</CardTitle></CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between gap-2">
+          <CardTitle>Catalogue ({filteredProducts.length})</CardTitle>
+          {isAdmin && selectedProductIds.size > 0 && (
+            <Badge variant="secondary">{selectedProductIds.size} produit(s) sélectionné(s)</Badge>
+          )}
+        </CardHeader>
         <CardContent>
           {loading ? (
             <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
@@ -595,6 +724,18 @@ export default function ProductsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    {isAdmin && (
+                      <TableHead className="w-10">
+                        <Checkbox
+                          checked={
+                            filteredProducts.length > 0 &&
+                            selectedProductIds.size === filteredProducts.length
+                          }
+                          onCheckedChange={toggleSelectAllProducts}
+                          aria-label="Tout sélectionner"
+                        />
+                      </TableHead>
+                    )}
                     <TableHead className="w-14">Image</TableHead>
                     <TableHead>Référence</TableHead>
                     <TableHead>Nom</TableHead>
@@ -612,14 +753,23 @@ export default function ProductsPage() {
                 <TableBody>
                   {filteredProducts.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={12} className="text-center py-8 text-muted-foreground">Aucun produit trouvé</TableCell>
+                      <TableCell colSpan={isAdmin ? 13 : 12} className="text-center py-8 text-muted-foreground">Aucun produit trouvé</TableCell>
                     </TableRow>
                   ) : filteredProducts.map(product => {
                     const status = getStatus(product);
                     const expiry = getExpiryInfo(product.expiry_date);
                     const img = imageUrl(product.image1);
                     return (
-                      <TableRow key={product.id}>
+                      <TableRow key={product.id} className={selectedProductIds.has(product.id) ? 'bg-muted/40' : ''}>
+                        {isAdmin && (
+                          <TableCell>
+                            <Checkbox
+                              checked={selectedProductIds.has(product.id)}
+                              onCheckedChange={() => toggleProductSelection(product.id)}
+                              aria-label={`Sélectionner ${product.name}`}
+                            />
+                          </TableCell>
+                        )}
                         <TableCell>
                           <button
                             type="button"
@@ -974,6 +1124,17 @@ export default function ProductsPage() {
             </DialogContent>
           </Dialog>
         </>
+      )}
+
+      {isAdmin && (
+        <TransferProductsDialog
+          open={transferDialogOpen}
+          onOpenChange={setTransferDialogOpen}
+          sourceStore={sourceStoreForTransfer}
+          stores={stores}
+          initialCart={transferInitialCart}
+          onSuccess={handleTransferSuccess}
+        />
       )}
     </div>
   );
