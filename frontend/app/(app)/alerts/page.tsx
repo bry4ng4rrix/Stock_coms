@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { AlertTriangle, Package, RefreshCw } from 'lucide-react';
+import { useRealtimeRefresh } from '@/lib/hooks/useRealtimeRefresh';
 
 const fmt = (n: number) => new Intl.NumberFormat('fr-MG').format(Math.round(n));
 
@@ -15,17 +16,19 @@ export default function AlertsPage() {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
+  const fetchData = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const data = await djangoClient.products.list();
       setProducts(data);
     } catch (err) {
       console.error(err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
+
+  useRealtimeRefresh(['product', 'sale'], () => fetchData(true));
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -82,7 +85,7 @@ export default function AlertsPage() {
           <h1 className="text-3xl font-bold tracking-tight">Alertes</h1>
           <p className="text-muted-foreground mt-1">Produits nécessitant une attention</p>
         </div>
-        <Button variant="outline" size="sm" onClick={fetchData} disabled={loading}>
+        <Button variant="outline" size="sm" onClick={() => fetchData()} disabled={loading}>
           <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />Actualiser
         </Button>
       </div>

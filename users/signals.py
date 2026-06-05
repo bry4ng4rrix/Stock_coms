@@ -1,10 +1,12 @@
-from django.db.models.signals import post_save
+from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
-from .models import Sale, Product, CustomUser, Notification, EmployerProfile, ChatMessage
+from .models import Sale, Product, CustomUser, Notification, EmployerProfile, ChatMessage, Movement
+from .broadcast import broadcast_data_event
 
 
 @receiver(post_save, sender=Sale)
 def sale_created(sender, instance: Sale, created, **kwargs):
+    broadcast_data_event("sale", "created" if created else "updated", instance)
     if not created:
         return
     try:
@@ -14,8 +16,14 @@ def sale_created(sender, instance: Sale, created, **kwargs):
         pass
 
 
+@receiver(post_delete, sender=Sale)
+def sale_deleted(sender, instance: Sale, **kwargs):
+    broadcast_data_event("sale", "deleted", instance)
+
+
 @receiver(post_save, sender=Product)
 def product_created(sender, instance: Product, created, **kwargs):
+    broadcast_data_event("product", "created" if created else "updated", instance)
     if not created:
         return
     try:
@@ -23,6 +31,22 @@ def product_created(sender, instance: Product, created, **kwargs):
         Notification.objects.create(notif_type="product", message=msg, magasin=instance.magasin, product=instance)
     except Exception:
         pass
+
+
+@receiver(post_delete, sender=Product)
+def product_deleted(sender, instance: Product, **kwargs):
+    broadcast_data_event("product", "deleted", instance)
+
+
+@receiver(post_save, sender=Movement)
+def movement_created(sender, instance: Movement, created, **kwargs):
+    if created:
+        broadcast_data_event("movement", "created", instance)
+
+
+@receiver(post_delete, sender=Movement)
+def movement_deleted(sender, instance: Movement, **kwargs):
+    broadcast_data_event("movement", "deleted", instance)
 
 
 @receiver(post_save, sender=CustomUser)

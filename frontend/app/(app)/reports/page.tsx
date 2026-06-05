@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { RefreshCw, TrendingUp, Package, DollarSign, ShoppingBag } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { useRealtimeRefresh } from '@/lib/hooks/useRealtimeRefresh';
 
 const fmt = (n: number) => new Intl.NumberFormat('fr-MG').format(Math.round(n));
 
@@ -18,8 +19,8 @@ export default function ReportsPage() {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
+  const fetchData = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const [s, p] = await Promise.all([djangoClient.sales.list(), djangoClient.products.list()]);
       setSales(s);
@@ -27,9 +28,11 @@ export default function ReportsPage() {
     } catch (err) {
       console.error(err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
+
+  useRealtimeRefresh(['product', 'sale'], () => fetchData(true));
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -70,7 +73,7 @@ export default function ReportsPage() {
           <h1 className="text-3xl font-bold tracking-tight">Rapports</h1>
           <p className="text-muted-foreground mt-1">Analyse des ventes et du stock</p>
         </div>
-        <Button variant="outline" size="sm" onClick={fetchData} disabled={loading}>
+        <Button variant="outline" size="sm" onClick={() => fetchData()} disabled={loading}>
           <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />Actualiser
         </Button>
       </div>

@@ -14,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Moon, Sun, LogOut, User } from 'lucide-react';
+import { Notifications } from '@/components/notifications';
 import { useTheme } from 'next-themes';
 import { useCurrentUser } from '@/lib/auth/useCurrentUser';
 import { djangoClient } from '@/lib/django-client';
@@ -53,6 +54,8 @@ export function TopBar() {
         <div className="flex-1" />
 
         <div className="flex items-center gap-3">
+          <Notifications />
+
           {/* Theme toggle */}
           <Button
             variant="ghost"

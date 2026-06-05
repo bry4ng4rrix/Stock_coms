@@ -231,3 +231,65 @@ class NotificationConsumer(AsyncWebsocketConsumer):
                 return None
         return None
 
+
+class DataSyncConsumer(AsyncWebsocketConsumer):
+    """Broadcasts real-time updates for products, sales, movements and stats."""
+
+    async def connect(self):
+        query_string = self.scope.get("query_string", b"").decode("utf-8")
+        query_params = parse_qs(query_string)
+        token_list = query_params.get("token")
+
+        self.user = None
+        if token_list:
+            self.user = await self.get_user_from_token(token_list[0])
+
+        if not self.user or self.user.is_anonymous:
+            await self.close()
+            return
+
+        self.groups_joined = []
+
+        if self.user.role == "admin":
+            group_name = f"data_admin_{self.user.id}"
+            await self.channel_layer.group_add(group_name, self.channel_name)
+            self.groups_joined.append(group_name)
+        else:
+            magasin_id = await self.get_user_magasin_id(self.user)
+            if magasin_id:
+                group_name = f"data_magasin_{magasin_id}"
+                await self.channel_layer.group_add(group_name, self.channel_name)
+                self.groups_joined.append(group_name)
+
+        await self.accept()
+
+    async def disconnect(self, close_code):
+        for group_name in self.groups_joined:
+            await self.channel_layer.group_discard(group_name, self.channel_name)
+
+    async def data_update(self, event):
+        await self.send(text_data=json.dumps(event["payload"]))
+
+    @database_sync_to_async
+    def get_user_from_token(self, token_str):
+        try:
+            access_token = AccessToken(token_str)
+            user_id = access_token["user_id"]
+            return User.objects.get(id=user_id)
+        except Exception:
+            return None
+
+    @database_sync_to_async
+    def get_user_magasin_id(self, user):
+        if user.role == "magasin":
+            try:
+                return user.magasin_profile.id
+            except Exception:
+                return None
+        elif user.role == "employer":
+            try:
+                return user.employer_profile.magasin.id
+            except Exception:
+                return None
+        return None
+

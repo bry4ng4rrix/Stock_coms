@@ -17,6 +17,7 @@ import {
   Plus, Download, Pencil, Trash2, X, ImagePlus, Upload, Loader2, AlertTriangle, QrCode, ShoppingCart,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useRealtimeRefresh } from '@/lib/hooks/useRealtimeRefresh';
 import { generateSimpleQRCode } from '@/lib/qrcode-generator';
 import { useCurrentUser } from '@/lib/auth/useCurrentUser';
 import {
@@ -137,17 +138,19 @@ export default function ProductsPage() {
     .filter(p => p.expiryInfo && p.expiryInfo.days <= 30)
     .sort((a, b) => a.expiryInfo.days - b.expiryInfo.days);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const data = await djangoClient.products.list();
       setProducts(data);
     } catch (err: any) {
-      toast.error('Erreur de chargement des produits: ' + err.message);
+      if (!silent) toast.error('Erreur de chargement des produits: ' + err.message);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
+
+  useRealtimeRefresh(['product', 'sale', 'movement'], () => fetchData(true));
 
   const fetchStores = useCallback(async () => {
     if (!isAdmin) return;
@@ -487,7 +490,7 @@ export default function ProductsPage() {
           <h1 className="text-3xl font-bold tracking-tight">Produits</h1>
           <p className="text-muted-foreground mt-1">Gestion du catalogue et des stocks</p>
         </div>
-        <div className="flex gap-2 items-center">
+        <div className="flex flex-wrap gap-2 items-center">
           <input
             ref={fileInputRef}
             type="file"
@@ -509,9 +512,9 @@ export default function ProductsPage() {
           {canCreate && (
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
               <DialogTrigger asChild>
-                <Button size="sm"><Plus className="h-4 w-4 mr-2" />Ajouter</Button>
+                {isAdmin && <Button size="sm"><Plus className="h-4 w-4" />Ajouter</Button>}
               </DialogTrigger>
-              <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogContent className="max-w-2xl w-[calc(100vw-2rem)] max-h-[90vh] overflow-y-auto">
                 <DialogHeader><DialogTitle>Ajouter un produit</DialogTitle></DialogHeader>
                 <ProductForm
                   form={form} setForm={setForm} isAdmin={isAdmin}
@@ -525,7 +528,7 @@ export default function ProductsPage() {
         </div>
       </div>
       {importErrors.length > 0 && (
-        <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-800">
+        <div className="rounded-lg border border-red-300 bg-red-50 dark:bg-red-950/30 p-4 text-sm text-red-800 dark:text-red-300">
           <p className="font-semibold">Erreurs d’import :</p>
           <ul className="list-disc list-inside mt-2 space-y-1">
             {importErrors.map((error, idx) => <li key={idx}>{error}</li>)}
@@ -719,7 +722,7 @@ export default function ProductsPage() {
 
       {/* Edit Dialog */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl w-[calc(100vw-2rem)] max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Modifier le produit</DialogTitle><DialogDescription>Informations du produit</DialogDescription></DialogHeader>
           {editingProduct && (
             <ProductForm
@@ -803,7 +806,7 @@ export default function ProductsPage() {
           {previewProduct && (
             <div className="space-y-6">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="rounded-xl border bg-white p-4">
+                <div className="rounded-xl border bg-card p-4">
                   {previewImageUrl ? (
                     <img
                       src={previewImageUrl}
@@ -1037,9 +1040,12 @@ function ProductForm({ form, setForm, isAdmin, stores = [], storesLoading = fals
     return String(value).split('/').pop();
   };
 
+  const fileInputClass =
+    'w-full rounded-md border border-input bg-background text-foreground text-sm file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-muted/80';
+
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
          {isAdmin && (
           <div className="space-y-2 md:col-span-2">
             <Label>Magasin *</Label>
@@ -1125,70 +1131,62 @@ function ProductForm({ form, setForm, isAdmin, stores = [], storesLoading = fals
           />
         </div>
       </div>
-        <div className="space-y-2 md:col-span-2">
+
+      <div className="space-y-4 rounded-lg border border-border bg-muted/20 dark:bg-muted/10 p-4">
+        <h3 className="text-sm font-semibold">Images du produit</h3>
+
+        <div className="space-y-2">
           <Label>Image principale</Label>
           <input
             type="file"
             accept="image/*"
-            className="w-full rounded border border-slate-300 p-2"
+            className={fileInputClass}
             onChange={e => set('image1', e.target.files?.[0] ?? null)}
           />
-          {previewName('image1') && <p className="text-xs text-muted-foreground">Fichier actuel: {previewName('image1')}</p>}
+          {previewName('image1') && (
+            <p className="text-xs text-muted-foreground truncate">Fichier : {previewName('image1')}</p>
+          )}
         </div>
-        <div className="space-y-2 md:col-span-2">
-          <Label>Ajouter 2 images (drag & drop)</Label>
+
+        <div className="space-y-3">
+          <Label>Images supplémentaires (max. 2)</Label>
           <div
             onDragOver={(event) => event.preventDefault()}
             onDrop={handleDropImages}
-            className="min-h-30 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-muted-foreground flex flex-col items-center justify-center text-center"
+            className="min-h-[100px] rounded-lg border border-dashed border-input bg-muted/30 dark:bg-muted/20 p-4 text-sm text-muted-foreground flex flex-col items-center justify-center text-center"
           >
-            <Upload className="h-5 w-5 mb-2" />
-            Glissez-déposez jusqu'à 2 images ici, ou utilisez les champs ci-dessous.
+            <Upload className="h-5 w-5 mb-2 opacity-70" />
+            Glissez-déposez jusqu&apos;à 2 images ici
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Image secondaire 1</Label>
+              <Label className="text-xs text-muted-foreground">Secondaire 1</Label>
               <input
                 type="file"
                 accept="image/*"
-                className="w-full rounded border border-slate-300 p-2"
+                className={fileInputClass}
                 onChange={e => set('image2', e.target.files?.[0] ?? null)}
               />
-              {previewName('image2') && <p className="text-xs text-muted-foreground">Fichier actuel: {previewName('image2')}</p>}
+              {previewName('image2') && (
+                <p className="text-xs text-muted-foreground truncate">Fichier : {previewName('image2')}</p>
+              )}
             </div>
             <div className="space-y-2">
-              <Label>Image secondaire 2</Label>
+              <Label className="text-xs text-muted-foreground">Secondaire 2</Label>
               <input
                 type="file"
                 accept="image/*"
-                className="w-full rounded border border-slate-300 p-2"
+                className={fileInputClass}
                 onChange={e => set('image3', e.target.files?.[0] ?? null)}
               />
-              {previewName('image3') && <p className="text-xs text-muted-foreground">Fichier actuel: {previewName('image3')}</p>}
+              {previewName('image3') && (
+                <p className="text-xs text-muted-foreground truncate">Fichier : {previewName('image3')}</p>
+              )}
             </div>
           </div>
         </div>
-        <div className="space-y-2 md:col-span-2">
-          <Label>Image secondaire 1</Label>
-          <input
-            type="file"
-            accept="image/*"
-            className="w-full rounded border border-slate-300 p-2"
-            onChange={e => set('image2', e.target.files?.[0] ?? null)}
-          />
-          {previewName('image2') && <p className="text-xs text-muted-foreground">Fichier actuel: {previewName('image2')}</p>}
-        </div>
-        <div className="space-y-2">
-          <Label>Image secondaire 2</Label>
-          <input
-            type="file"
-            accept="image/*"
-            className="w-full rounded border border-slate-300 p-2"
-            onChange={e => set('image3', e.target.files?.[0] ?? null)}
-          />
-          {previewName('image3') && <p className="text-xs text-muted-foreground">Fichier actuel: {previewName('image3')}</p>}
-        </div>
-        <div className="space-y-2 md:col-span-2">
+
+        <div className="space-y-2 border-t border-border pt-4">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <Label>QR Code produit</Label>
             <Button variant="secondary" size="sm" type="button" onClick={handleGenerateQr}>
@@ -1198,13 +1196,16 @@ function ProductForm({ form, setForm, isAdmin, stores = [], storesLoading = fals
           <input
             type="file"
             accept="image/*"
-            className="w-full rounded border border-slate-300 p-2"
+            className={fileInputClass}
             onChange={e => set('qr_code', e.target.files?.[0] ?? null)}
           />
-          {previewName('qr_code') && <p className="text-xs text-muted-foreground">Fichier actuel: {previewName('qr_code')}</p>}
+          {previewName('qr_code') && (
+            <p className="text-xs text-muted-foreground truncate">Fichier : {previewName('qr_code')}</p>
+          )}
         </div>
+      </div>
 
-      <div className="flex justify-end gap-2 pt-2">
+      <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-2">
         <Button variant="outline" onClick={onCancel}>Annuler</Button>
         <Button onClick={onSubmit} disabled={saving}>
           {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}{submitLabel}

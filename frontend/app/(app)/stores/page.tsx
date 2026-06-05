@@ -23,6 +23,7 @@ import {
 import { Store, Users, RefreshCw, Loader2, Edit, ArrowLeftRight, ShoppingCart, Search, X, Check } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from 'sonner';
+import { useRealtimeRefresh } from '@/lib/hooks/useRealtimeRefresh';
 
 export default function StoresPage() {
   const { user, isAdmin } = useCurrentUser();
@@ -59,8 +60,8 @@ export default function StoresPage() {
   const [submittingTransfer, setSubmittingTransfer] = useState(false);
 
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
+  const fetchData = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
 
     try {
       const data = await djangoClient.get<any[]>(
@@ -123,11 +124,13 @@ export default function StoresPage() {
       setStores(merged);
     } catch (err) {
       console.error(err);
-      toast.error('Erreur lors du chargement.');
+      if (!silent) toast.error('Erreur lors du chargement.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [isAdmin]);
+
+  useRealtimeRefresh(['product', 'sale'], () => fetchData(true));
 
   useEffect(() => {
     fetchData();
@@ -373,20 +376,20 @@ export default function StoresPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="container mx-auto py-8 space-y-6">
+      <div className="container mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
 
-        <div className="flex justify-between items-center">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold">
+            <h1 className="text-2xl sm:text-3xl font-bold">
               Magasins
             </h1>
 
-            <p className="text-muted-foreground">
+            <p className="text-muted-foreground text-sm sm:text-base">
               {stores.length} magasin(s)
             </p>
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
 
             {isAdmin && (
               <Dialog
@@ -495,7 +498,7 @@ export default function StoresPage() {
 
             <Button
               variant="outline"
-              onClick={fetchData}
+              onClick={() => fetchData()}
             >
               <RefreshCw
                 className={`h-4 w-4 mr-2 ${
@@ -511,34 +514,34 @@ export default function StoresPage() {
         </div>
 
         {loading ? (
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {Array.from({ length: 3 }).map(
               (_, i) => (
                 <Skeleton
                   key={i}
-                  className="h-40 rounded-xl"
+                  className="h-48 rounded-xl"
                 />
               )
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
                  
             {stores.map((store) => (
               <Card
                 key={store.magasin_id}
               >
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="flex items-center gap-2">
+                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="flex items-center gap-2 min-w-0 text-base sm:text-lg">
                     {store.shop_logo ? (
-                      <img src={store.shop_logo} alt="logo" className="h-5 w-5 rounded-full object-cover" />
+                      <img src={store.shop_logo} alt="logo" className="h-5 w-5 shrink-0 rounded-full object-cover" />
                     ) : (
-                      <Store className="h-5 w-5" />
+                      <Store className="h-5 w-5 shrink-0" />
                     )}
-                    {store.shop_name}
+                    <span className="truncate">{store.shop_name}</span>
                   </CardTitle>
                   {isAdmin && (
-                   <div className='flex space-x-2'>
+                   <div className="flex shrink-0 gap-1 sm:gap-2">
                                         {/*transfert products between stores  */}    
                     <Button 
                       size="icon"
@@ -572,51 +575,51 @@ export default function StoresPage() {
                     </div>
                   )}
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-2 gap-2 sm:gap-3">
 
-                    <div className="border rounded-lg p-3">
+                    <div className="border rounded-lg p-2 sm:p-3">
                       <p className="text-xs text-muted-foreground">
                         Produits
                       </p>
 
                     <div>
-                    <p className="font-bold">
+                    <p className="font-bold text-sm sm:text-base leading-tight">
                     {formatNumber(store.stats?.total_stock_quantity)} unité(s) sur {formatNumber(store.stats?.total_products)} produits
                       </p>
 
                     </div>
                     </div>
 
-                    <div className="border rounded-lg p-3">
+                    <div className="border rounded-lg p-2 sm:p-3">
                       <p className="text-xs text-muted-foreground">
                         Stock
                       </p>
 
-                      <p className="font-bold">
+                      <p className="font-bold text-sm sm:text-base">
                         {formatCurrency(
                           store.stats?.total_stock_value
                         )}
                       </p>
                     </div>
 
-                    <div className="border rounded-lg p-3">
+                    <div className="border rounded-lg p-2 sm:p-3">
                       <p className="text-xs text-muted-foreground">
                         Ventes
                       </p>
 
-                      <p className="font-bold">
+                      <p className="font-bold text-sm sm:text-base">
                         {formatCurrency(
                           store.stats?.total_sold_value
                         )}
                       </p>
                     </div>
 
-                    <div className="border rounded-lg p-3 bg-green-50">
+                    <div className="border rounded-lg p-2 sm:p-3 bg-green-50 dark:bg-green-950/30">
                       <p className="text-xs text-muted-foreground">
                         Profit
                       </p>
 
-                      <p className="font-bold text-green-700">
+                      <p className="font-bold text-sm sm:text-base text-green-700 dark:text-green-400">
                         {formatCurrency(
                           store.stats?.profit
                         )}

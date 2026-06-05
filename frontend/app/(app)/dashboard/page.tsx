@@ -15,6 +15,7 @@ import {
   ArrowUp, ArrowDown, CheckCircle2,
 } from 'lucide-react';
 import { AIAnalysis } from '@/components/ai-analysis';
+import { useRealtimeRefresh } from '@/lib/hooks/useRealtimeRefresh';
 
 const CHART_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#6366f1', '#f97316'];
 
@@ -51,9 +52,9 @@ export default function DashboardPage() {
   const [expiringProducts, setExpiringProducts] = useState<any[]>([]);
   const [movementStats, setMovementStats] = useState<{ fastest: any[], slowest: any[] }>({ fastest: [], slowest: [] });
 
-  const fetchDashboard = useCallback(async () => {
+  const fetchDashboard = useCallback(async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
 
       // Fetch from Django REST API
       const dashboardData = await djangoClient.get<any>('/users/dashboard/');
@@ -172,9 +173,11 @@ export default function DashboardPage() {
     } catch (err) {
       console.error('Dashboard error:', err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
+
+  useRealtimeRefresh(['product', 'sale', 'movement'], () => fetchDashboard(true));
 
   useEffect(() => {
     fetchDashboard();

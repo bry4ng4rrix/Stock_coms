@@ -50,9 +50,12 @@ import {
   RefreshCw,
   Loader2,
   AlertTriangle,
+  Download,
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 import { toast } from 'sonner';
+import { useRealtimeRefresh } from '@/lib/hooks/useRealtimeRefresh';
 
 interface Sale {
   id: number;
@@ -103,6 +106,10 @@ export default function SalesPage() {
   const [loading, setLoading] = useState(true);
   const [loadingSaleProducts, setLoadingSaleProducts] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [saleStartDate, setSaleStartDate] = useState('');
+  const [saleEndDate, setSaleEndDate] = useState('');
+  const [dueStartDate, setDueStartDate] = useState('');
+  const [dueEndDate, setDueEndDate] = useState('');
 
   // Dialog
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -158,20 +165,24 @@ export default function SalesPage() {
   }, []);
 
   // Fetch
-  const fetchData = useCallback(async () => {
-    setLoading(true);
+  const fetchData = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
 
     try {
       const salesData = await djangoClient.sales.list();
       setSales(Array.isArray(salesData) ? salesData : []);
     } catch (error: any) {
-      toast.error(
-        error?.message || 'Erreur lors du chargement des données'
-      );
+      if (!silent) {
+        toast.error(
+          error?.message || 'Erreur lors du chargement des données'
+        );
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
+
+  useRealtimeRefresh(['sale', 'product'], () => fetchData(true));
 
   useEffect(() => {
     fetchData();
@@ -199,14 +210,23 @@ export default function SalesPage() {
     const term = searchTerm.toLowerCase();
 
     return sales.filter((sale) => {
-      return (
+      const soldDateStr = sale.sold_at ? sale.sold_at.split('T')[0] : '';
+      const dueDateStr = sale.payment_due_date ? sale.payment_due_date.split('T')[0] : '';
+
+      const matchesTerm =
         !term ||
         sale.product_name?.toLowerCase().includes(term) ||
         sale.seller_name?.toLowerCase().includes(term) ||
-        sale.customer_name?.toLowerCase().includes(term)
-      );
+        sale.customer_name?.toLowerCase().includes(term);
+
+      const matchesSaleStart = !saleStartDate || soldDateStr >= saleStartDate;
+      const matchesSaleEnd = !saleEndDate || soldDateStr <= saleEndDate;
+      const matchesDueStart = !dueStartDate || (dueDateStr && dueDateStr >= dueStartDate);
+      const matchesDueEnd = !dueEndDate || (dueDateStr && dueDateStr <= dueEndDate);
+
+      return matchesTerm && matchesSaleStart && matchesSaleEnd && matchesDueStart && matchesDueEnd;
     });
-  }, [sales, searchTerm]);
+  }, [sales, searchTerm, saleStartDate, saleEndDate, dueStartDate, dueEndDate]);
 
   const filteredStores = useMemo(() => {
     const term = storeSearch.toLowerCase();
@@ -444,6 +464,31 @@ export default function SalesPage() {
     });
   };
 
+  const handleExportExcel = () => {
+    if (filteredSales.length === 0) {
+      toast.error('Aucune vente à exporter pour les filtres sélectionnés');
+      return;
+    }
+    const rows = filteredSales.map((sale) => ({
+      'Date vente': formatDate(sale.sold_at),
+      Client: sale.customer_name || '',
+      Produit: sale.product_name || `Produit #${sale.product}`,
+      Quantité: sale.quantity,
+      'Prix unitaire (Ar)': sale.sale_price,
+      'Total (Ar)': sale.total_price,
+      Paiement: sale.is_paid ? 'Payé' : 'Non payé',
+      'Montant versé (Ar)': sale.payment_amount ?? '',
+      'Date échéance': sale.payment_due_date ? formatDueDate(sale.payment_due_date) : '',
+      Vendeur: sale.seller_name || '',
+      Magasin: sale.shop_name || '',
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Ventes');
+    XLSX.writeFile(wb, `ventes_${new Date().toISOString().split('T')[0]}.xlsx`);
+    toast.success(`${filteredSales.length} vente(s) exportée(s)`);
+  };
+
   const formatDueDate = (dateStr?: string) => {
     if (!dateStr) return '—';
     const parts = dateStr.split('T')[0].split('-');
@@ -516,7 +561,7 @@ export default function SalesPage() {
 
           <Button
             variant="outline"
-            onClick={fetchData}
+            onClick={() => fetchData()}
             disabled={loading}
           >
             <RefreshCw

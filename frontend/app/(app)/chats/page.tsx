@@ -12,9 +12,9 @@ import {
   Circle, 
   Store, 
   Shield, 
-  User as UserIcon,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  ArrowLeft,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -63,6 +63,7 @@ export default function ChatsPage() {
   
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState('');
+  const [mobileShowChat, setMobileShowChat] = useState(false);
 
   // WebSocket state
   const [socketStatus, setSocketStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected');
@@ -265,13 +266,13 @@ export default function ChatsPage() {
   const getRoleBadgeColor = (role: string) => {
     switch (role) {
       case 'admin':
-        return 'bg-rose-500/10 text-rose-600 hover:bg-rose-500/20 border-rose-500/20';
+        return 'bg-rose-500/10 text-rose-700 dark:text-rose-400 hover:bg-rose-500/20 border-rose-500/20';
       case 'magasin':
-        return 'bg-blue-500/10 text-blue-600 hover:bg-blue-500/20 border-blue-500/20';
+        return 'bg-blue-500/10 text-blue-700 dark:text-blue-400 hover:bg-blue-500/20 border-blue-500/20';
       case 'employer':
-        return 'bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 border-emerald-500/20';
+        return 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/20 border-emerald-500/20';
       default:
-        return 'bg-slate-500/10 text-slate-600';
+        return 'bg-muted text-muted-foreground';
     }
   };
 
@@ -295,6 +296,28 @@ export default function ChatsPage() {
     );
   });
 
+  const openChatView = () => setMobileShowChat(true);
+
+  const handleSelectGeneral = () => {
+    setActiveRecipient(null);
+    openChatView();
+  };
+
+  const handleSelectUser = (u: ChatUser) => {
+    setActiveRecipient(u);
+    openChatView();
+  };
+
+  const handleTabChange = (val: string) => {
+    setActiveTab(val as 'general' | 'direct');
+    setMobileShowChat(false);
+    if (val === 'general') {
+      setActiveRecipient(null);
+    } else if (filteredUsers.length > 0) {
+      setActiveRecipient(filteredUsers[0]);
+    }
+  };
+
   if (authLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
@@ -317,21 +340,21 @@ export default function ChatsPage() {
   }
 
   return (
-    <div className=" mx-auto px-4 sm:px-6 lg:px-8 py-6 h-[calc(100vh-100px)] flex flex-col">
+    <div className="mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 h-[calc(100dvh-4rem)] sm:h-[calc(100vh-100px)] flex flex-col">
       
       {/* Title & Info */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+      <div className={`flex flex-col md:flex-row justify-between items-start md:items-center mb-4 sm:mb-6 gap-3 sm:gap-4 ${mobileShowChat ? 'hidden md:flex' : ''}`}>
         <div>
-          <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">
             Messagerie Interne
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Collaborez en temps réel avec toute l'équipe de l'entreprise et de vos magasins.
+          <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+            Collaborez en temps réel avec toute l&apos;équipe de l&apos;entreprise et de vos magasins.
           </p>
         </div>
 
         {/* Current user micro card */}
-        <div className="flex items-center gap-3 px-4 py-2 bg-card border rounded-2xl shadow-sm">
+        <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 bg-card border rounded-2xl shadow-sm w-full md:w-auto">
           <Avatar className="h-9 w-9 border-2 border-primary/20">
             <AvatarFallback className="bg-primary/10 text-primary text-xs font-bold">
               {getInitials(currentUser.full_name)}
@@ -348,23 +371,16 @@ export default function ChatsPage() {
       </div>
 
       {/* Main chat box container */}
-      <div className="flex-1 min-h-0 bg-card border rounded-3xl overflow-hidden shadow-md flex">
+      <div className="flex-1 min-h-0 bg-card border rounded-2xl sm:rounded-3xl overflow-hidden shadow-md flex">
         
         {/* Left Side: Sidebar */}
-        <div className="w-full md:w-80 border-r flex flex-col bg-slate-50/50 dark:bg-slate-950/20 shrink-0 select-none">
+        <div className={`${mobileShowChat ? 'hidden md:flex' : 'flex'} w-full md:w-80 border-r flex-col bg-muted/30 shrink-0 select-none`}>
           
           {/* Tab Switcher */}
-          <div className="p-4 border-b">
+          <div className="p-3 sm:p-4 border-b">
             <Tabs 
               value={activeTab} 
-              onValueChange={(val) => {
-                setActiveTab(val as 'general' | 'direct');
-                if (val === 'general') {
-                  setActiveRecipient(null);
-                } else if (filteredUsers.length > 0) {
-                  setActiveRecipient(filteredUsers[0]);
-                }
-              }}
+              onValueChange={handleTabChange}
               className="w-full"
             >
               <TabsList className="grid grid-cols-2 rounded-2xl p-1 bg-muted/80">
@@ -401,9 +417,7 @@ export default function ChatsPage() {
               {activeTab === 'general' ? (
                 // General Chat Channel Row
                 <button
-                  onClick={() => {
-                    setActiveRecipient(null);
-                  }}
+                  onClick={handleSelectGeneral}
                   className={`w-full text-left p-3 rounded-2xl flex items-center gap-3 transition-all ${
                     activeRecipient === null
                       ? 'bg-primary text-primary-foreground shadow-sm shadow-primary/20'
@@ -440,7 +454,7 @@ export default function ChatsPage() {
                     filteredUsers.map((u) => (
                       <button
                         key={u.id}
-                        onClick={() => setActiveRecipient(u)}
+                        onClick={() => handleSelectUser(u)}
                         className={`w-full text-left p-3 rounded-2xl flex items-center gap-3 transition-all ${
                           activeRecipient?.id === u.id
                             ? 'bg-primary text-primary-foreground shadow-sm shadow-primary/20'
@@ -496,11 +510,20 @@ export default function ChatsPage() {
         </div>
 
         {/* Right Side: Conversation window */}
-        <div className="flex-1 flex flex-col bg-background relative min-w-0">
+        <div className={`${!mobileShowChat ? 'hidden md:flex' : 'flex'} flex-1 flex-col bg-background relative min-w-0`}>
           
           {/* Main conversation Header */}
-          <div className="p-4 border-b flex justify-between items-center shadow-sm shrink-0 bg-card select-none">
-            <div className="flex items-center gap-3 min-w-0">
+          <div className="p-3 sm:p-4 border-b flex justify-between items-center shadow-sm shrink-0 bg-card select-none gap-2">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="md:hidden shrink-0 h-8 w-8"
+                onClick={() => setMobileShowChat(false)}
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
               {activeTab === 'general' ? (
                 <>
                   <div className="p-2.5 rounded-xl bg-primary/10 text-primary shrink-0">
@@ -537,7 +560,7 @@ export default function ChatsPage() {
             {/* Socket connection indicator */}
             <div className="flex items-center gap-2 shrink-0">
               {socketStatus === 'connected' ? (
-                <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-[10px] flex items-center gap-1.5 rounded-full py-0.5 px-2.5">
+                <Badge variant="outline" className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 text-[10px] flex items-center gap-1.5 rounded-full py-0.5 px-2.5">
                   <span className="relative flex h-2 w-2">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
@@ -545,12 +568,12 @@ export default function ChatsPage() {
                   En ligne
                 </Badge>
               ) : socketStatus === 'connecting' ? (
-                <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20 text-[10px] flex items-center gap-1.5 rounded-full py-0.5 px-2.5">
+                <Badge variant="outline" className="bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20 text-[10px] flex items-center gap-1.5 rounded-full py-0.5 px-2.5">
                   <Loader2 className="h-3 w-3 animate-spin text-amber-500" />
                   Connexion...
                 </Badge>
               ) : (
-                <Badge variant="outline" className="bg-rose-500/10 text-rose-600 border-rose-500/20 text-[10px] flex items-center gap-1.5 rounded-full py-0.5 px-2.5">
+                <Badge variant="outline" className="bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20 text-[10px] flex items-center gap-1.5 rounded-full py-0.5 px-2.5">
                   <Circle className="h-2 w-2 fill-rose-500 text-rose-500" />
                   Hors ligne
                 </Badge>
@@ -559,7 +582,7 @@ export default function ChatsPage() {
           </div>
 
           {/* Messages Scroll Area */}
-          <div className="flex-1 min-h-0 relative bg-slate-50/20 dark:bg-slate-950/5">
+          <div className="flex-1 min-h-0 relative bg-muted/20">
             {loadingHistory ? (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -577,7 +600,7 @@ export default function ChatsPage() {
               </div>
             ) : (
               <ScrollArea className="h-full">
-                <div className="p-4 space-y-4">
+                <div className="p-3 sm:p-4 space-y-3 sm:space-y-4">
                   {messages.map((msg, index) => {
                     const isOwnMessage = msg.sender === currentUser.id;
                     const showSenderName = !isOwnMessage && (index === 0 || messages[index - 1].sender !== msg.sender);
@@ -598,11 +621,11 @@ export default function ChatsPage() {
                         )}
                         
                         {/* Bubble */}
-                        <div className="max-w-[75%] md:max-w-[65%] flex flex-col">
-                          <div className={`p-3 text-xs md:text-sm shadow-sm rounded-2xl ${
+                        <div className="max-w-[85%] sm:max-w-[75%] md:max-w-[65%] flex flex-col">
+                          <div className={`p-2.5 sm:p-3 text-xs sm:text-sm shadow-sm rounded-2xl ${
                             isOwnMessage 
-                              ? 'bg-gradient-to-tr from-blue-600 to-indigo-600 text-white rounded-tr-sm' 
-                              : 'bg-muted text-muted-foreground rounded-tl-sm'
+                              ? 'bg-primary text-primary-foreground rounded-tr-sm' 
+                              : 'bg-muted text-foreground rounded-tl-sm'
                           }`}>
                             <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
                           </div>
@@ -624,15 +647,16 @@ export default function ChatsPage() {
           </div>
 
           {/* Quick Suggestions & Input form */}
-          <div className="p-4 border-t bg-card shrink-0 select-none">
+          <div className="p-3 sm:p-4 border-t bg-card shrink-0 select-none safe-area-pb">
             {/* Quick Suggestions */}
             {messages.length === 0 && (
-              <div className="flex flex-wrap gap-1.5 mb-3">
+              <div className="flex flex-wrap gap-1.5 mb-2 sm:mb-3">
                 {quickSuggestions.map((suggestion) => (
                   <button
                     key={suggestion}
+                    type="button"
                     onClick={() => setNewMessage(suggestion)}
-                    className="text-[10px] px-2.5 py-1 bg-secondary hover:bg-primary hover:text-white rounded-full transition-all duration-200 border cursor-pointer"
+                    className="text-[10px] sm:text-xs px-2 sm:px-2.5 py-1 bg-secondary hover:bg-primary hover:text-primary-foreground rounded-full transition-all duration-200 border cursor-pointer"
                   >
                     {suggestion}
                   </button>
@@ -641,20 +665,21 @@ export default function ChatsPage() {
             )}
 
             {/* Input message form */}
-            <form onSubmit={handleSendMessage} className="flex gap-2 items-center">
+            <form onSubmit={handleSendMessage} className="flex gap-2 items-end">
               <Input
                 placeholder="Rédiger votre message..."
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
                 disabled={socketStatus !== 'connected'}
-                className="flex-1 rounded-2xl h-10 text-xs md:text-sm bg-slate-50/50 dark:bg-slate-900/50 border-input"
+                className="flex-1 rounded-2xl min-h-10 h-10 sm:h-11 text-sm bg-background border-input"
               />
               <Button 
                 type="submit" 
                 disabled={!newMessage.trim() || socketStatus !== 'connected'}
-                className="rounded-2xl h-10 px-4 flex items-center justify-center shrink-0 cursor-pointer active:scale-95 transition-transform"
+                className="rounded-2xl h-10 sm:h-11 w-10 sm:w-auto sm:px-4 flex items-center justify-center shrink-0 active:scale-95 transition-transform"
               >
                 <Send className="h-4 w-4" />
+                <span className="hidden sm:inline ml-2">Envoyer</span>
               </Button>
             </form>
           </div>

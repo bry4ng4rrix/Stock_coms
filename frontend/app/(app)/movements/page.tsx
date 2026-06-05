@@ -10,8 +10,11 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowDown, TrendingUp, Package, RefreshCw } from 'lucide-react';
+import { ArrowDown, TrendingUp, Package, RefreshCw, Download } from 'lucide-react';
+import * as XLSX from 'xlsx';
+import { toast } from 'sonner';
 import { useCurrentUser } from '@/lib/auth/useCurrentUser';
+import { useRealtimeRefresh } from '@/lib/hooks/useRealtimeRefresh';
 
 const fmt = (n: number) =>
   new Intl.NumberFormat('fr-MG', { minimumFractionDigits: 0 }).format(Math.round(n));
@@ -45,8 +48,8 @@ export default function MovementsPage() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
+  const fetchData = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const [movementsData, productsData] = await Promise.all([
         djangoClient.movements.list(),
@@ -57,9 +60,11 @@ export default function MovementsPage() {
     } catch (err) {
       console.error('Error fetching data:', err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
+
+  useRealtimeRefresh(['movement', 'product', 'sale'], () => fetchData(true));
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -110,6 +115,31 @@ export default function MovementsPage() {
       hour: '2-digit', minute: '2-digit',
     });
 
+  const handleExportExcel = () => {
+    if (filteredMovements.length === 0) {
+      toast.error('Aucun mouvement à exporter pour les filtres sélectionnés');
+      return;
+    }
+    const rows = filteredMovements.map((m) => ({
+      Date: formatDate(m.created_at),
+      Produit: m.product_name || `Produit #${m.product}`,
+      Référence: m.product_reference || '',
+      Type: m.movement_type || 'Mise à jour',
+      Quantité: m.change,
+      'Stock avant': m.previous_quantity,
+      'Stock après': m.new_quantity,
+      Note: m.note || '',
+      Utilisateur: m.changed_by_name || 'Système',
+      Magasin: m.magasin_name || '',
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Mouvements');
+    const dateSuffix = new Date().toISOString().split('T')[0];
+    XLSX.writeFile(wb, `mouvements_${dateSuffix}.xlsx`);
+    toast.success(`${filteredMovements.length} mouvement(s) exporté(s)`);
+  };
+
   const groupedByDay = useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
     const groups: Record<string, any[]> = {};
@@ -124,36 +154,48 @@ export default function MovementsPage() {
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Mouvements de stock</h1>
-          <p className="text-muted-foreground mt-1">Historique complet des mouvements de stock</p>
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Mouvements de stock</h1>
+            <p className="text-muted-foreground mt-1 text-sm sm:text-base">Historique complet des mouvements de stock</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={() => fetchData()} disabled={loading}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+              Actualiser
+            </Button>
+            {isAdmin && (
+              <Button variant="outline" size="sm" onClick={handleExportExcel} disabled={loading || filteredMovements.length === 0}>
+                <Download className="h-4 w-4 mr-2" />
+                Exporter XLSX
+              </Button>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row flex-wrap gap-3">
+          <div className="flex flex-col sm:flex-row gap-2 flex-1 min-w-[200px]">
+            <Input
+              type="date"
+              value={startDate}
+              onChange={e => setStartDate(e.target.value)}
+              className="w-full sm:max-w-[160px]"
+              title="Date début"
+            />
+            <Input
+              type="date"
+              value={endDate}
+              onChange={e => setEndDate(e.target.value)}
+              className="w-full sm:max-w-[160px]"
+              title="Date fin"
+            />
+          </div>
           <Input
-  type="date"
-  placeholder="Date début"
-  value={startDate}
-  onChange={e => setStartDate(e.target.value)}
-  className="max-w-xs mr-2"
-/>
-<Input
-  type="date"
-  placeholder="Date fin"
-  value={endDate}
-  onChange={e => setEndDate(e.target.value)}
-  className="max-w-xs mr-2"
-/>
-<Input
-  placeholder="Rechercher produit, vendeur..."
-  value={searchTerm}
-  onChange={e => setSearchTerm(e.target.value)}
-  className="max-w-xs"
-/>
-          <Button variant="outline" size="sm" onClick={fetchData} disabled={loading}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-            Actualiser
-          </Button>
+            placeholder="Rechercher produit, vendeur..."
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            className="w-full sm:max-w-xs"
+          />
         </div>
       </div>
 

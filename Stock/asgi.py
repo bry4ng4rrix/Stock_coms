@@ -11,7 +11,7 @@ django.setup()
 from channels.routing import ProtocolTypeRouter, URLRouter
 from channels.auth import AuthMiddlewareStack
 from django.urls import path
-from users.consumers import ChatConsumer, NotificationConsumer
+from users.consumers import ChatConsumer, NotificationConsumer, DataSyncConsumer
 
 django_asgi_app = get_asgi_application()
 
@@ -21,6 +21,7 @@ application = ProtocolTypeRouter({
         URLRouter([
             path("ws/chat/", ChatConsumer.as_asgi()),
             path("ws/notifications/", NotificationConsumer.as_asgi()),
+            path("ws/data/", DataSyncConsumer.as_asgi()),
         ])
     ),
 })
