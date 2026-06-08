@@ -202,7 +202,7 @@ class MagasinProfileSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = MagasinProfile
-        fields = ["id", "shop_name", "shop_logo", "admin", "user"]
+        fields = ["id", "shop_name", "description", "shop_logo", "admin", "user"]
         read_only_fields = ["id", "admin", "user"]
 
     def get_shop_logo(self, obj):

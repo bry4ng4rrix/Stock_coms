@@ -24,8 +24,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
             await self.close()
             return
             
-        user_admin = await self.get_user_admin_async(self.user)
-        if not user_admin:
+        my_magasin_ids = await self.get_company_magasin_ids_async(self.user)
+        if not my_magasin_ids:
             await self.close()
             return
 
@@ -41,9 +41,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 if not self.recipient:
                     await self.close()
                     return
-                # Verify that the recipient belongs to the same admin organization
-                recipient_admin = await self.get_user_admin_async(self.recipient)
-                if not recipient_admin or recipient_admin.id != user_admin.id:
+                # Verify that the recipient belongs to the same company (shares a magasin)
+                recipient_magasin_ids = await self.get_company_magasin_ids_async(self.recipient)
+                if not recipient_magasin_ids or not (my_magasin_ids & recipient_magasin_ids):
                     await self.close()
                     return
                 # Create a deterministic room name for the DM
@@ -55,7 +55,11 @@ class ChatConsumer(AsyncWebsocketConsumer):
         else:
             self.recipient = None
             if raw_room == "general":
-                self.room_name = f"general_{user_admin.id}"
+                company_id = await self.get_company_id_async(self.user)
+                if not company_id:
+                    await self.close()
+                    return
+                self.room_name = f"general_{company_id}"
             else:
                 self.room_name = raw_room
 
@@ -118,27 +122,15 @@ class ChatConsumer(AsyncWebsocketConsumer):
             return None
 
     @database_sync_to_async
-    def get_user_admin_async(self, user):
-        if not user or user.is_anonymous:
-            return None
-        if user.role == "admin":
-            return user
-        elif user.role == "magasin":
-            try:
-                return user.magasin_profile.admin
-            except Exception:
-                return None
-        elif user.role == "employer":
-            try:
-                ep = user.employer_profile
-                if ep.admin:
-                    return ep.admin
-                if ep.magasin:
-                    return ep.magasin.admin
-            except Exception:
-                return None
-        return None
-            
+    def get_company_magasin_ids_async(self, user):
+        from users.views import get_company_magasins
+        return set(get_company_magasins(user).values_list("id", flat=True))
+
+    @database_sync_to_async
+    def get_company_id_async(self, user):
+        from users.views import get_company_id
+        return get_company_id(user)
+
     @database_sync_to_async
     def save_message(self, sender, recipient, room_name, content):
         from users.models import ChatMessage

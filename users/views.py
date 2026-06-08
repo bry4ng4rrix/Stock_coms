@@ -37,6 +37,43 @@ def get_user_admin(user):
     return None
 
 
+def get_company_magasins(user):
+    """Magasins forming the 'company' a user belongs to.
+
+    Unlike get_user_admin (which only resolves the single primary/owner admin),
+    this also accounts for co-admins linked through MagasinProfile.admins (M2M),
+    so admins added via AddAdminView are recognized as part of the same company.
+    """
+    if not user or user.is_anonymous:
+        return MagasinProfile.objects.none()
+    if user.role == "admin":
+        return MagasinProfile.objects.filter(Q(admin=user) | Q(admins=user)).distinct()
+    elif user.role == "magasin":
+        try:
+            return MagasinProfile.objects.filter(id=user.magasin_profile.id)
+        except Exception:
+            return MagasinProfile.objects.none()
+    elif user.role == "employer":
+        try:
+            ep = user.employer_profile
+            if ep.magasin:
+                return MagasinProfile.objects.filter(id=ep.magasin.id)
+        except Exception:
+            pass
+    return MagasinProfile.objects.none()
+
+
+def get_company_id(user):
+    """Stable identifier for a user's company, used to scope the general chat room.
+
+    Based on the company's primary magasin owner (admin FK), so every co-admin,
+    gérant and employer of the same magasins lands in the same room regardless
+    of which admin is currently logged in.
+    """
+    magasin = get_company_magasins(user).order_by("id").first()
+    return magasin.admin_id if magasin else None
+
+
 def _sale_purchase_price(sale):
     purchase_price = sale.purchase_price
     if purchase_price is None or purchase_price == 0:
@@ -90,15 +127,15 @@ class RegisterView(APIView):
         serializer = RegisterSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
-            # If the new user is an admin, create a default store (MagasinProfile) linked to this admin.
+            # If the new user is an admin, create a default "Stock Local" store linked to this admin.
             if user.role == "admin":
                 from .models import MagasinProfile
-                # Create a store with a default name; associate the admin as both the owner and manager.
-                MagasinProfile.objects.create(
-                    user=user,
+                magasin = MagasinProfile.objects.create(
                     admin=user,
-                    shop_name=f"{user.full_name or user.username}'s Store"
+                    shop_name="Stock Local",
+                    description="Magasin pour les stocks locaux",
                 )
+                magasin.admins.add(user)
             return Response({"message": "Inscription réussie", "id": user.id})
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -113,9 +150,10 @@ class AddAdminView(APIView):
             # Ensure role is admin
             new_admin.role = "admin"
             new_admin.save()
-            # Add new admin to all magasins where the requesting admin is an admin
+            # Give the new admin the exact same access as the creator: every magasin
+            # where the requester is the owner (admin FK) or a co-admin (admins M2M).
             current_admin = request.user
-            magasins = MagasinProfile.objects.filter(admins=current_admin)
+            magasins = MagasinProfile.objects.filter(Q(admin=current_admin) | Q(admins=current_admin)).distinct()
             for magasin in magasins:
                 magasin.admins.add(new_admin)
             return Response({"message": "Admin ajouté", "id": new_admin.id}, status=status.HTTP_201_CREATED)
@@ -1460,16 +1498,16 @@ class ChatUsersListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        user_admin = get_user_admin(request.user)
-        if not user_admin:
+        magasins = get_company_magasins(request.user)
+        if not magasins.exists():
             return Response([])
 
         users = CustomUser.objects.filter(
             Q(is_confirmed=True),
-            Q(id=user_admin.id) |
-            Q(magasin_profile__admin=user_admin) |
-            Q(employer_profile__admin=user_admin) |
-            Q(employer_profile__magasin__admin=user_admin)
+            Q(magasins__in=magasins) |
+            Q(admin_magasin_profiles__in=magasins) |
+            Q(magasin_profile__in=magasins) |
+            Q(employer_profile__magasin__in=magasins)
         ).exclude(id=request.user.id).distinct()
 
         data = []
@@ -1502,16 +1540,16 @@ class ChatMessageHistoryView(APIView):
         room_name = request.query_params.get("room_name", "general")
         recipient_id = request.query_params.get("recipient_id")
 
-        user_admin = get_user_admin(request.user)
-        if not user_admin:
+        my_magasins = get_company_magasins(request.user)
+        if not my_magasins.exists():
             return Response([])
 
         if recipient_id:
             try:
                 recipient = CustomUser.objects.get(id=recipient_id)
-                # Verify recipient belongs to the same admin organization
-                recipient_admin = get_user_admin(recipient)
-                if not recipient_admin or recipient_admin.id != user_admin.id:
+                # Verify recipient belongs to the same company (shares at least one magasin)
+                recipient_magasins = get_company_magasins(recipient)
+                if not recipient_magasins.exists() or not my_magasins.filter(id__in=recipient_magasins).exists():
                     return Response({"error": "Permission refusée"}, status=403)
 
                 messages = ChatMessage.objects.filter(
@@ -1521,7 +1559,10 @@ class ChatMessageHistoryView(APIView):
             except CustomUser.DoesNotExist:
                 return Response({"error": "Destinataire introuvable"}, status=404)
         else:
-            scoped_room = f"general_{user_admin.id}"
+            company_id = get_company_id(request.user)
+            if not company_id:
+                return Response([])
+            scoped_room = f"general_{company_id}"
             messages = ChatMessage.objects.filter(room_name=scoped_room, recipient__isnull=True).order_by("timestamp")
 
         # Take last 100 messages
