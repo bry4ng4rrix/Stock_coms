@@ -2,9 +2,108 @@ from rest_framework.test import APITestCase
 from rest_framework import status
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
-from users.models import AdminProfile, MagasinProfile
+from users.models import AdminProfile, MagasinProfile, EmployerProfile
 
 User = get_user_model()
+
+class AddAdminAPITestCase(APITestCase):
+
+    def test_add_admin_without_company_name_creates_profile(self):
+        admin_user = User.objects.create_user(
+            email="owner@test.com",
+            password="testpassword123",
+            role="admin",
+            is_confirmed=True,
+            full_name="Owner",
+        )
+        self.client.force_authenticate(user=admin_user)
+
+        response = self.client.post(
+            "/api/users/add-admin/",
+            {
+                "email": "newadmin@test.com",
+                "username": "newadmin@test.com",
+                "password": "testpassword123",
+                "role": "admin",
+                "full_name": "New Admin",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        user = User.objects.get(email="newadmin@test.com")
+        self.assertEqual(user.role, "admin")
+        self.assertTrue(AdminProfile.objects.filter(user=user).exists())
+        self.assertTrue(AdminProfile.objects.get(user=user).company_name)
+
+
+class UsersByMagasinViewAPITestCase(APITestCase):
+
+    def test_add_admin_then_fetch_users_shows_new_admin(self):
+        admin_user = User.objects.create_user(
+            email="owner@test.com",
+            password="testpassword123",
+            role="admin",
+            is_confirmed=True,
+            full_name="Owner",
+        )
+        store = MagasinProfile.objects.create(admin=admin_user, shop_name="Boutique A")
+        store.admins.add(admin_user)
+
+        self.client.force_authenticate(user=admin_user)
+
+        response = self.client.post(
+            "/api/users/add-admin/",
+            {
+                "email": "newadmin@test.com",
+                "username": "newadmin@test.com",
+                "password": "testpassword123",
+                "role": "admin",
+                "full_name": "New Admin",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        users_response = self.client.get("/api/users/magasins/users/")
+        self.assertEqual(users_response.status_code, status.HTTP_200_OK)
+
+        found = any(
+            user["email"] == "newadmin@test.com"
+            for store_data in users_response.data
+            for user in store_data.get("company_users", [])
+        )
+        self.assertTrue(found, users_response.data)
+
+    def test_admin_get_company_users_includes_all_society_users(self):
+        admin_user = User.objects.create_user(
+            email="owner@test.com",
+            password="testpassword123",
+            role="admin",
+            is_confirmed=True,
+            full_name="Owner",
+        )
+        employee_user = User.objects.create_user(
+            email="employee@test.com",
+            password="testpassword123",
+            role="employer",
+            is_confirmed=True,
+            full_name="Employee",
+        )
+
+        store = MagasinProfile.objects.create(admin=admin_user, shop_name="Boutique A")
+        store.admins.add(admin_user)
+        EmployerProfile.objects.create(user=employee_user, admin=admin_user, magasin=store, position="Vendeur")
+
+        self.client.force_authenticate(user=admin_user)
+
+        response = self.client.get("/api/users/magasins/users/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(any(item["id"] == admin_user.id for item in response.data[0]["company_users"]))
+        self.assertTrue(any(item["id"] == employee_user.id for item in response.data[0]["company_users"]))
+
 
 class ProfileLogoAPITestCase(APITestCase):
 

@@ -44,6 +44,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         password = validated_data.pop("password")
 
         if role == "admin":
+            company_name = company_name or validated_data.get("full_name") or "Entreprise"
             user = CustomUser.objects.create(username=username, is_confirmed=True, **validated_data)
             user.set_password(password)
             user.save()

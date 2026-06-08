@@ -131,7 +131,6 @@ class MagasinProfileAdmin(admin.ModelAdmin):
     list_display = (
         "id",
         "shop_name",
-        "user",
         "admin",
         "created_at",
     )

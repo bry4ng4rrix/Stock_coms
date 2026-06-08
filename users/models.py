@@ -104,7 +104,8 @@ class AdminProfile(models.Model):
 
 class MagasinProfile(models.Model):
 
-    user = models.OneToOneField(CustomUser,on_delete=models.CASCADE,related_name="magasin_profile",limit_choices_to={"role": "magasin"})
+    admins = models.ManyToManyField(CustomUser, related_name="admin_magasin_profiles", blank=True, limit_choices_to={"role": "admin"})
+    # Keep existing primary admin for backward compatibility
     admin = models.ForeignKey(CustomUser,on_delete=models.CASCADE,related_name="magasins",limit_choices_to={"role": "admin"})
     shop_name = models.CharField(max_length=255)
     shop_logo = models.ImageField(upload_to="shop_logo/",blank=True,null=True)

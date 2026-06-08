@@ -2,6 +2,7 @@ from django.urls import path
 
 # Import view classes and viewsets
 from .views import (
+    AddAdminView,
     RegisterView,
     ApproveUserView,
     Myprofile,
@@ -82,5 +83,6 @@ urlpatterns = [
     # Chat endpoints
     path("chat/users/", ChatUsersListView.as_view()),
     path("chat/history/", ChatMessageHistoryView.as_view()),
+    path('add-admin/', AddAdminView.as_view(), name='add-admin'),
 ] + router.urls
 

@@ -60,13 +60,18 @@ export default function UsersPage() {
       ]);
 
       const flat: any[] = [];
+      const seenUserIds = new Set<number>();
+
+      const addUser = (user: any, shopName?: string, magasinId?: number) => {
+        if (!user || seenUserIds.has(user.id)) return;
+        seenUserIds.add(user.id);
+        flat.push({ ...user, shop_name: shopName || user.shop_name || '-', magasin_id: magasinId ?? user.magasin_id ?? null });
+      };
+
       for (const store of storeData) {
-        if (store.manager) {
-          flat.push({ ...store.manager, shop_name: store.shop_name, magasin_id: store.magasin_id });
-        }
-        for (const emp of store.employers || []) {
-          flat.push({ ...emp, shop_name: store.shop_name, magasin_id: store.magasin_id });
-        }
+        if (store.manager) addUser(store.manager, store.shop_name, store.magasin_id);
+        for (const emp of store.employers || []) addUser(emp, store.shop_name, store.magasin_id);
+        for (const companyUser of store.company_users || []) addUser(companyUser, companyUser.shop_name || store.shop_name, companyUser.magasin_id ?? store.magasin_id);
       }
       setAllUsers(flat);
       setPendingUsers(pending);
@@ -136,6 +141,7 @@ export default function UsersPage() {
       toast.error('Le mot de passe doit contenir au moins 6 caractères');
       return;
     }
+
     setIsSubmitting(true);
     try {
       const extraData: any = {};
@@ -145,27 +151,63 @@ export default function UsersPage() {
       } else if (newUser.role === 'magasin') {
         extraData.shop_name = newUser.shop_name;
         extraData.admin_email = currentUser?.email || '';
-      } else if (newUser.role === 'admin') {
-        extraData.company_name = newUser.company_name;
       }
-      await djangoClient.auth.register(
-        newUser.email,
-        newUser.email,
-        newUser.password,
-        newUser.role,
-        { full_name: newUser.full_name, ...extraData }
-      );
+
+      let createdUser: any = null;
+
+      if (newUser.role === 'admin') {
+        createdUser = await djangoClient.post<any>('/users/add-admin/', {
+          email: newUser.email,
+          username: newUser.email,
+          password: newUser.password,
+          role: newUser.role,
+          full_name: newUser.full_name,
+        });
+      } else {
+        createdUser = await djangoClient.auth.register(
+          newUser.email,
+          newUser.email,
+          newUser.password,
+          newUser.role,
+          { full_name: newUser.full_name, ...extraData }
+        );
+      }
 
       if (newUser.role !== 'admin') {
         toast.info('Utilisateur créé en attente d\'approbation');
       } else {
         toast.success('Administrateur créé avec succès');
       }
+
+      if (createdUser?.id && newUser.role === 'admin') {
+        setAllUsers(prev => [
+          {
+            id: createdUser.id,
+            full_name: newUser.full_name,
+            email: newUser.email,
+            role: 'admin',
+            shop_name: currentUser?.company_name || 'Société',
+            magasin_id: null,
+            position: '',
+            is_confirmed: true,
+          },
+          ...prev,
+        ]);
+      }
+
       setIsDialogOpen(false);
       setNewUser({ full_name: '', email: '', password: '', role: 'employer', position: '', shop_name: '', company_name: '' });
       await fetchUsers();
     } catch (err: any) {
-      toast.error(err.message);
+      const errorData = err?.response?.data;
+      const usernameError = Array.isArray(errorData?.username) ? errorData.username.join(' ') : '';
+      const emailError = Array.isArray(errorData?.email) ? errorData.email.join(' ') : '';
+
+      if (usernameError.toLowerCase().includes('already exists') || emailError.toLowerCase().includes('already exists')) {
+        toast.error('Un utilisateur avec ce nom d\'utilisateur ou cet email existe déjà.');
+      } else {
+        toast.error(err?.message || 'Une erreur est survenue pendant la création du compte.');
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -267,12 +309,7 @@ export default function UsersPage() {
                       <Input value={newUser.shop_name} onChange={e => setNewUser({ ...newUser, shop_name: e.target.value })} placeholder="Ex: Boutique Ivandry" required />
                     </div>
                   )}
-                  {newUser.role === 'admin' && (
-                    <div className="space-y-2">
-                      <Label>Nom de l'entreprise *</Label>
-                      <Input value={newUser.company_name} onChange={e => setNewUser({ ...newUser, company_name: e.target.value })} placeholder="Ex: Ma Société" required />
-                    </div>
-                  )}
+
                   <Button type="submit" className="w-full" disabled={isSubmitting}>
                     {isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Création...</> : 'Créer l\'utilisateur'}
                   </Button>
@@ -473,3 +510,4 @@ export default function UsersPage() {
     </div>
   );
 }
+

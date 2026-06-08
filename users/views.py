@@ -102,6 +102,25 @@ class RegisterView(APIView):
             return Response({"message": "Inscription réussie", "id": user.id})
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+class AddAdminView(APIView):
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def post(self, request):
+        """Create a new admin user and associate with existing magasins of the requester."""
+        serializer = RegisterSerializer(data=request.data)
+        if serializer.is_valid():
+            new_admin = serializer.save()
+            # Ensure role is admin
+            new_admin.role = "admin"
+            new_admin.save()
+            # Add new admin to all magasins where the requesting admin is an admin
+            current_admin = request.user
+            magasins = MagasinProfile.objects.filter(admins=current_admin)
+            for magasin in magasins:
+                magasin.admins.add(new_admin)
+            return Response({"message": "Admin ajouté", "id": new_admin.id}, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 # =========================
 # APPROVE USER
 # =========================
@@ -270,7 +289,7 @@ class TotalsView(APIView):
     def get(self, request):
         user = request.user
         if user.role == "admin":
-            products = Product.objects.filter(magasin__admin=user)
+            products = Product.objects.filter(magasin__admins=user)
         elif user.role == "magasin":
             products = Product.objects.filter(magasin__user=user)
         elif user.role == "employer":
@@ -292,7 +311,11 @@ class ProfitView(APIView):
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def get(self, request):
-        sales_qs = Sale.objects.filter(magasin__admin=request.user)
+        # For admins, retrieve all sales
+        if request.user.role == "admin":
+            sales_qs = Sale.objects.filter(magasin__admins=request.user)
+        else:
+            sales_qs = Sale.objects.none()
         revenue, cost, profit, _ = _sale_totals(sales_qs)
         return Response({
             'total_revenue': revenue,
@@ -308,13 +331,11 @@ class AdminMagasinProfitView(APIView):
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def get(self, request):
-        magasins = MagasinProfile.objects.filter(admin=request.user)
-
+        magasins = MagasinProfile.objects.filter(admins=request.user)
         data = []
         for magasin in magasins:
             sales_qs = Sale.objects.filter(magasin=magasin)
             total_revenue, total_cost, total_profit, total_quantity = _sale_totals(sales_qs)
-
             data.append({
                 'magasin_id': magasin.id,
                 'shop_name': magasin.shop_name,
@@ -332,8 +353,7 @@ class AdminMagasinOverviewView(APIView):
 
     def get(self, request):
         week_start = timezone.now() - timedelta(days=7)
-        magasins = MagasinProfile.objects.filter(admin=request.user).select_related("user")
-
+        magasins = MagasinProfile.objects.filter(admins=request.user)
         response_data = []
 
         for magasin in magasins:
@@ -373,7 +393,7 @@ class SaleViewSet(viewsets.ModelViewSet):
         user = self.request.user
         base_qs = Sale.objects.select_related('product', 'magasin', 'seller')
         if user.role == "admin":
-            return base_qs.filter(magasin__admin=user)
+            return base_qs.filter(magasin__admins=user)
         elif user.role == "magasin":
             try:
                 magasin = MagasinProfile.objects.get(user=user)
@@ -390,11 +410,11 @@ class SaleViewSet(viewsets.ModelViewSet):
 
         # Security check: ensure the product belongs to the current user's company/store
         if user.role == "admin":
-            if not product.magasin or product.magasin.admin != user:
+            if not product.magasin or user not in product.magasin.admins.all():
                 raise serializers.ValidationError({"product": "Ce produit n'appartient pas à l'un de vos magasins."})
         elif user.role == "magasin":
-            if not product.magasin or product.magasin.user != user:
-                raise serializers.ValidationError({"product": "Ce produit n'appartient pas à votre magasin."})
+            if not product.magasin or user not in product.magasin.admins.all():
+                raise serializers.ValidationError({"product": "Ce produit n'appartient pas à l'un de vos magasins."})
         elif user.role == "employer":
             try:
                 employer = EmployerProfile.objects.get(user=user)
@@ -432,7 +452,7 @@ class MovementViewSet(viewsets.ReadOnlyModelViewSet):
         user = self.request.user
         qs = Movement.objects.select_related('product', 'magasin', 'changed_by')
         if user.role == 'admin':
-            return qs.filter(product__magasin__admin=user)
+            return qs.filter(magasin__admins=user)
         elif user.role == 'magasin':
             try:
                 magasin = MagasinProfile.objects.get(user=user)
@@ -459,7 +479,7 @@ class ProductViewSet(viewsets.ModelViewSet):
         user = self.request.user
         base_qs = Product.objects.select_related('magasin')
         if user.role == "admin":
-            qs = base_qs.filter(magasin__admin=user)
+            qs = base_qs.filter(magasin__admins=user)
         elif user.role == "magasin":
             try:
                 magasin = MagasinProfile.objects.get(user=user)
@@ -501,7 +521,7 @@ class ProductViewSet(viewsets.ModelViewSet):
             magasin_id = self.request.data.get("magasin")
             if magasin_id:
                 try:
-                    magasin = MagasinProfile.objects.get(id=magasin_id, admin=user)
+                    magasin = MagasinProfile.objects.get(id=magasin_id, admins=user)
                 except MagasinProfile.DoesNotExist:
                     raise serializers.ValidationError({"magasin": "Magasin introuvable ou invalide pour cet administrateur."})
             else:
@@ -685,7 +705,7 @@ class NotificationViewSet(viewsets.ModelViewSet):
         user = self.request.user
         qs = Notification.objects.select_related('magasin','product','sale','user')
         if user.role == 'admin':
-            return qs.filter(Q(magasin__admin=user) | Q(user=user)).distinct()
+            return qs.filter(Q(magasin__admins=user) | Q(user=user)).distinct()
         elif user.role == 'magasin':
             try:
                 magasin = MagasinProfile.objects.get(user=user)
@@ -770,10 +790,27 @@ class UsersByMagasinView(APIView):
     def get(self, request):
         user = request.user
         response_data = []
+        company_users = []
+        seen_user_ids = set()
+
+        def add_company_user(user_obj, shop_name=None, magasin_id=None, position=None):
+            if not user_obj or user_obj.id in seen_user_ids:
+                return
+            seen_user_ids.add(user_obj.id)
+            company_users.append({
+                "id": user_obj.id,
+                "full_name": user_obj.full_name,
+                "email": user_obj.email,
+                "is_confirmed": user_obj.is_confirmed,
+                "role": user_obj.role,
+                "shop_name": shop_name,
+                "magasin_id": magasin_id,
+                "position": position,
+            })
 
         # Admin can see all magasins belonging to them
         if user.role == "admin":
-            magasins = MagasinProfile.objects.filter(admin=user)
+            magasins = MagasinProfile.objects.filter(admins=user)
         # Magasin can see only their own magasin
         elif user.role == "magasin":
             magasins = MagasinProfile.objects.filter(user=user)
@@ -792,12 +829,14 @@ class UsersByMagasinView(APIView):
 
         for mag in magasins:
             manager_data = {
-                "id": mag.user.id,
-                "full_name": mag.user.full_name,
-                "email": mag.user.email,
-                "is_confirmed": mag.user.is_confirmed,
-                "role": mag.user.role,
-            } if mag.user else None
+                "id": mag.admin.id,
+                "full_name": mag.admin.full_name,
+                "email": mag.admin.email,
+                "is_confirmed": mag.admin.is_confirmed,
+                "role": mag.admin.role,
+            } if mag.admin else None
+            if manager_data:
+                add_company_user(mag.admin, mag.shop_name, mag.id)
 
             employers_qs = EmployerProfile.objects.filter(magasin=mag)
             employers_list = []
@@ -810,13 +849,18 @@ class UsersByMagasinView(APIView):
                     "position": emp.position,
                     "role": emp.user.role,
                 })
+                add_company_user(emp.user, mag.shop_name, mag.id, emp.position)
+
+            for admin_user in mag.admins.all():
+                add_company_user(admin_user, mag.shop_name, mag.id)
 
             response_data.append({
                 "magasin_id": mag.id,
                 "shop_name": mag.shop_name,
                 "shop_logo": request.build_absolute_uri(mag.shop_logo.url) if mag.shop_logo else None,
                 "manager": manager_data,
-                "employers": employers_list
+                "employers": employers_list,
+                "company_users": company_users,
             })
 
         return Response(response_data)
@@ -829,7 +873,7 @@ class MagasinStatsView(APIView):
         user = request.user
 
         if user.role == "admin":
-            magasins = MagasinProfile.objects.filter(admin=user)
+            magasins = MagasinProfile.objects.filter(admins=user)
         elif user.role == "magasin":
             magasins = MagasinProfile.objects.filter(user=user)
         elif user.role == "employer":
@@ -1249,9 +1293,9 @@ class PendingUsersView(APIView):
 
         if user.role == "admin":
             pending_qs = CustomUser.objects.filter(
-                Q(is_confirmed=False),
-                Q(magasin_profile__admin=user) | Q(employer_profile__admin=user) | Q(employer_profile__magasin__admin=user)
-            ).distinct()
+            Q(is_confirmed=False),
+            Q(employer_profile__admin=user) | Q(employer_profile__magasin__admin=user)
+        ).distinct()
         else:
             try:
                 magasin = MagasinProfile.objects.get(user=user)
