@@ -37,13 +37,18 @@ const MEDIA_BASE = (process.env.NEXT_PUBLIC_DJANGO_API_URL || 'http://157.173.10
   .replace('/api', '');
 
 const CATEGORIES = [
-  'Soins visage', 'Maquillage', 'Corps', 'Cheveux', 'Parfum', 'Bain & Douche', 'Solaire',
-  'Homme', 'Femme', 'Enfant', 'Accessoires', 'Autre',
+  'Veste', 'Cheveux', 'Chemise', ,'Tee shirt','Short','Ceinture', 'Pantalon','Jupe','Robe','Sac','Produit Cosmetique', 'Sweet',
+   'Sandale','Claquette', 'Alimentaire', 'Parfun', 'Accessoire', 'Autre'
 ];
+
+
+const Taille = [
+  'XS','S','M','L','XL','XXL','3XL',
+]
 
 function getStatus(p: any) {
   const qty = p.initial_quantity ?? 0;
-  const threshold = p.alert_threshold ?? 5;
+  const threshold = p.alert_threshold ?? 0;
   if (qty === 0) return 'out_of_stock';
   if (qty <= threshold) return 'low';
   return 'in_stock';
@@ -71,7 +76,7 @@ function imageUrl(path: string | null | undefined): string | null {
 }
 
 const EMPTY_FORM = {
-  reference: '', name: '', brand: '', description: '', category: '',
+  reference: '', name: '', brand: '', description: '', category: '', taille: '', couleur: '',
   shell_price: '', unit_price: '', magasin: '', initial_quantity: '0', alert_threshold: '5',
   expiry_date: '',
   image1: null,
@@ -427,6 +432,8 @@ export default function ProductsPage() {
       fd.append('alert_threshold', form.alert_threshold || '5');
       if (form.brand) fd.append('brand', form.brand);
       if (form.description) fd.append('description', form.description);
+      if (form.taille) fd.append('taille', form.taille);
+      if (form.couleur) fd.append('couleur', form.couleur);
       if (form.expiry_date) fd.append('expiry_date', form.expiry_date);
       if (isAdmin && form.magasin) {
         fd.append('magasin', String(form.magasin));
@@ -465,6 +472,8 @@ export default function ProductsPage() {
       fd.append('initial_quantity', String(editingProduct.initial_quantity ?? 0));
       if (editingProduct.brand) fd.append('brand', editingProduct.brand);
       if (editingProduct.description) fd.append('description', editingProduct.description);
+      if (editingProduct.taille) fd.append('taille', editingProduct.taille);
+      if (editingProduct.couleur) fd.append('couleur', editingProduct.couleur);
       if (editingProduct.expiry_date) fd.append('expiry_date', editingProduct.expiry_date);
       if (editingProduct.unit_price) fd.append('unit_price', String(editingProduct.unit_price));
       const editImage1File = editingProduct.image1 as File | null;
@@ -1258,7 +1267,21 @@ function ProductForm({ form, setForm, isAdmin, stores = [], storesLoading = fals
             <SelectContent>{CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
           </Select>
         </div>
-       
+        <div className="space-y-2">
+          <Label>Taille</Label>
+          <Select value={form.taille || 'none'} onValueChange={v => set('taille', v === 'none' ? '' : v)}>
+            <SelectTrigger><SelectValue placeholder="Choisir une taille" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Aucune</SelectItem>
+              {Taille.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label>Couleur</Label>
+          <Input placeholder="Ex: Rouge, Bleu, Noir..." value={form.couleur || ''} onChange={e => set('couleur', e.target.value)} />
+        </div>
+
         <div className="space-y-2 md:col-span-2">
           <Label>Description</Label>
           <Textarea placeholder="Description du produit..." rows={2} value={form.description || ''} onChange={e => set('description', e.target.value)} />

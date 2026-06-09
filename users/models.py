@@ -156,6 +156,8 @@ class Product(models.Model):
     brand = models.CharField(max_length=255,blank=True,null=True)   
     category = models.CharField(max_length=255)
     description = models.TextField(blank=True,null=True)
+    taille = models.CharField(max_length=10, blank=True, null=True)
+    couleur = models.CharField(max_length=50, blank=True, null=True)
 
     # =====================================
     # PRIX
