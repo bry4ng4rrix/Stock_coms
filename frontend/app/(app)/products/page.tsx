@@ -749,6 +749,8 @@ export default function ProductsPage() {
                     <TableHead>Référence</TableHead>
                     <TableHead>Nom</TableHead>
                     <TableHead>Catégorie</TableHead>
+                    <TableHead>Taille</TableHead>
+                    <TableHead>Description</TableHead>
                     <TableHead className="text-right">Stock</TableHead>
                     <TableHead className="text-right">Prix vente</TableHead>
                     {isAdmin && <TableHead>Magasin</TableHead>}
@@ -762,7 +764,7 @@ export default function ProductsPage() {
                 <TableBody>
                   {filteredProducts.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={isAdmin ? 13 : 12} className="text-center py-8 text-muted-foreground">Aucun produit trouvé</TableCell>
+                      <TableCell colSpan={isAdmin ? 15 : 14} className="text-center py-8 text-muted-foreground">Aucun produit trouvé</TableCell>
                     </TableRow>
                   ) : filteredProducts.map(product => {
                     const status = getStatus(product);
@@ -801,6 +803,10 @@ export default function ProductsPage() {
                           <p className="text-xs text-muted-foreground">{product.brand || ''}</p>
                         </TableCell>
                         <TableCell className="text-sm">{product.category || '-'}</TableCell>
+                        <TableCell className="text-sm">{product.taille || '—'}</TableCell>
+                        <TableCell className="text-sm max-w-[200px]">
+                          <p className="truncate text-muted-foreground">{product.description || '—'}</p>
+                        </TableCell>
                         <TableCell className="text-right">
                           <Badge variant="outline">{product.initial_quantity ?? 0}</Badge>
                         </TableCell>
