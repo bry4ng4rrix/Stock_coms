@@ -8,9 +8,13 @@ COPY frontend/package*.json ./
 COPY frontend/tsconfig.json ./
 COPY frontend/next.config.mjs ./
 COPY frontend/postcss.config.mjs ./
+COPY frontend/components.json ./
 COPY frontend/public ./public
 COPY frontend/styles ./styles
 COPY frontend/app ./app
+COPY frontend/components ./components
+COPY frontend/lib ./lib
+COPY frontend/hooks ./hooks
 
 RUN npm install
 RUN npm run build

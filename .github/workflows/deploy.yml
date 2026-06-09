@@ -29,4 +29,4 @@ jobs:
 
       - name: Deploy with Docker Compose
         run: |
-          ssh ${{ secrets.VPS_SSH_USER }}@${{ secrets.VPS_SSH_HOST }} "cd ${{ secrets.VPS_APP_PATH }} && docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d --build"
+          ssh ${{ secrets.VPS_SSH_USER }}@${{ secrets.VPS_SSH_HOST }} "cd ${{ secrets.VPS_APP_PATH }} && docker-compose -f docker-compose.prod.yml up -d --build --remove-orphans"

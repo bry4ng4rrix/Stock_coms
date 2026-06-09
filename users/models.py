@@ -152,7 +152,7 @@ class Product(models.Model):
     # =====================================
 
     name = models.CharField(max_length=255)
-    reference = models.CharField(max_length=100,unique=True)
+    reference = models.CharField(max_length=100,unique=False)
     brand = models.CharField(max_length=255,blank=True,null=True)   
     category = models.CharField(max_length=255)
     description = models.TextField(blank=True,null=True)
