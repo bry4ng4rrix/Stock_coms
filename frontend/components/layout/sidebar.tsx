@@ -62,18 +62,12 @@ const navigationItems = [
     adminOnly: true,
   },
   {
-    label: 'Utilisateurs',
-    href: '/users',
-    icon: Users,
-    adminOnly: true,
-  },
-  {
     label: 'Notifications',
     href: '/notifications',
     icon: Bell,
     adminOnly: true,
   },
-  
+
   {
     label: 'Chats',
     href: '/chats',
@@ -87,7 +81,7 @@ const navigationItems = [
   },
   {
     label: 'Super Admin',
-    href: '/superadmin',
+    href: '/users',
     icon: Shield,
     superAdminOnly: true,
   },

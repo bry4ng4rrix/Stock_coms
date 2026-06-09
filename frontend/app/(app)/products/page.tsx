@@ -37,13 +37,13 @@ const MEDIA_BASE = (process.env.NEXT_PUBLIC_DJANGO_API_URL || 'http://157.173.10
   .replace('/api', '');
 
 const CATEGORIES = [
-  'Veste', 'Cheveux', 'Chemise', ,'Tee shirt','Short','Ceinture', 'Pantalon','Jupe','Robe','Sac','Produit Cosmetique', 'Sweet',
-   'Sandale','Claquette', 'Alimentaire', 'Parfun', 'Accessoire', 'Autre'
+  'Sweet', 'Chaussure', 'Veste', 'Cheveux', 'Chemise', 'Tee shirt', 'Short', 'Ceinture', 'Pantalon', 'Jupe', 'Robe', 'Sac', 'Produit Cosmetique',
+  'Sandale', 'Claquette', 'Alimentaire', 'Parfum', 'Accessoire', 'Autre'
 ];
 
 
 const Taille = [
-  'XS','S','M','L','XL','XXL','3XL',
+  'XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL',
 ]
 
 function getStatus(p: any) {
@@ -59,9 +59,9 @@ function getExpiryInfo(expiryDate: string | null) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const expiry = new Date(expiryDate);
   const days = Math.ceil((expiry.getTime() - today.getTime()) / 86_400_000);
-  if (days < 0)  return { days, label: 'Périmé',    cls: 'bg-red-100 text-red-800',    icon: true };
-  if (days <= 7)  return { days, label: `${days}j !`, cls: 'bg-red-100 text-red-800',    icon: true };
-  if (days <= 30) return { days, label: `${days}j`,   cls: 'bg-orange-100 text-orange-800', icon: false };
+  if (days < 0) return { days, label: 'Périmé', cls: 'bg-red-100 text-red-800', icon: true };
+  if (days <= 7) return { days, label: `${days}j !`, cls: 'bg-red-100 text-red-800', icon: true };
+  if (days <= 30) return { days, label: `${days}j`, cls: 'bg-orange-100 text-orange-800', icon: false };
   return { days, label: `${days}j`, cls: 'bg-green-100 text-green-800', icon: false };
 }
 
@@ -227,8 +227,8 @@ export default function ProductsPage() {
   });
 
   const statusColor = (s: string) => ({
-    in_stock:     'bg-green-100 text-green-800',
-    low:          'bg-orange-100 text-orange-800',
+    in_stock: 'bg-green-100 text-green-800',
+    low: 'bg-orange-100 text-orange-800',
     out_of_stock: 'bg-red-100 text-red-800',
   }[s] ?? '');
   const statusLabel = (s: string) => ({ in_stock: 'En stock', low: 'Faible', out_of_stock: 'Rupture' }[s] ?? s);
@@ -643,7 +643,7 @@ export default function ProductsPage() {
           </ul>
         </div>
       )}
-   
+
       {/* Expiry alert */}
       {expiringProducts.length > 0 && (
         <div className="rounded-lg border border-orange-300 bg-orange-50 dark:bg-orange-950/20 p-4">
@@ -750,6 +750,7 @@ export default function ProductsPage() {
                     <TableHead>Nom</TableHead>
                     <TableHead>Catégorie</TableHead>
                     <TableHead>Taille</TableHead>
+                    <TableHead>Couleurs</TableHead>
                     <TableHead>Description</TableHead>
                     <TableHead className="text-right">Stock</TableHead>
                     <TableHead className="text-right">Prix vente</TableHead>
@@ -804,6 +805,7 @@ export default function ProductsPage() {
                         </TableCell>
                         <TableCell className="text-sm">{product.category || '-'}</TableCell>
                         <TableCell className="text-sm">{product.taille || '—'}</TableCell>
+                        <TableCell className="text-sm">{product.couleur || '—'}</TableCell>
                         <TableCell className="text-sm max-w-[200px]">
                           <p className="truncate text-muted-foreground">{product.description || '—'}</p>
                         </TableCell>
@@ -1222,7 +1224,7 @@ function ProductForm({ form, setForm, isAdmin, stores = [], storesLoading = fals
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-         {isAdmin && (
+        {isAdmin && (
           <div className="space-y-2 md:col-span-2">
             <Label>Magasin *</Label>
             <Input
@@ -1253,7 +1255,7 @@ function ProductForm({ form, setForm, isAdmin, stores = [], storesLoading = fals
             </Select>
           </div>
         )}
-      
+
         <div className="space-y-2">
           <Label>Référence / SKU *</Label>
           <Input placeholder="Ex: CREM-001" value={form.reference || ''} onChange={e => set('reference', e.target.value)} />
@@ -1300,7 +1302,7 @@ function ProductForm({ form, setForm, isAdmin, stores = [], storesLoading = fals
           <Label>Prix de vente (Ar) *</Label>
           <Input type="number" step="0.01" placeholder="0.00" value={form.shell_price || ''} onChange={e => set('shell_price', e.target.value)} />
         </div>
-        
+
         <div className="space-y-2">
           <Label>Quantité initiale</Label>
           <Input type="number" min="0" placeholder="0" value={form.initial_quantity ?? ''} onChange={e => set('initial_quantity', e.target.value)} />
